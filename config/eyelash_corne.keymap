@@ -43,7 +43,7 @@
             bindings = <
 &none   &kp Q   &kp W   &kp E         &kp R     &kp T                               &kp UP                  &kp Y           &kp U     &kp I      &kp O    &kp P     &none
 &kp TAB &kp A   &kp S   &kp D         &kp F     &kp G                     &kp LEFT  &kp ENTER  &kp RIGHT    &kp H           &kp J     &kp K      &kp L    &kp SEMI  &none
-&no     &kp Z   &kp X   &kp C         &kp V     &kp B        &kp K_MUTE             &kp DOWN                &kp N           &kp M     &kp COMMA  &kp DOT  &kp FSLH  &none
+&none   &kp Z   &kp X   &kp C         &kp V     &kp B        &kp K_MUTE             &kp DOWN                &kp N           &kp M     &kp COMMA  &kp DOT  &kp FSLH  &none
                         &mt LGUI ESC  &kp LSHFT &kp BSPC                                                    &mt LCTRL ENTER &lt 1 SPACE &kp RALT
             >;
 
