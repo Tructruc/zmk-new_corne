@@ -246,6 +246,8 @@ parse_config:
       tap: BOOT
     "&soft_off":
       tap: "OFF"
+    "&tog 1":
+      tap: NUM
 
   # ZMK
   zmk_keycode_map:

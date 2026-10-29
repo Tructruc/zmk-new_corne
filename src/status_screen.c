@@ -294,12 +294,15 @@ static void render_central(void) {
 
     lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
 
-    /* Battery and, next to it, the level as a number. */
-    draw_battery(2, 2, 60, 14, shown.battery);
-    snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
-    draw_text(text, 2, 18, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    /* While the lead is in, the ADC measures the charging voltage and reports
+     * 100 %, so show the only thing actually known: that it is charging. */
     if (shown.charging) {
-        draw_bolt(50, 20);
+        draw_bolt(27, 1);
+        draw_text("CHG", 2, 20, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    } else {
+        draw_battery(2, 2, 60, 14, shown.battery);
+        snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
+        draw_text(text, 2, 18, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
     }
 
     draw_line(2, 40, 66, 40, 1, false);
@@ -363,8 +366,10 @@ static void render_link(void) {
 
     bool active_connected = shown.profile > 0 &&
                             (shown.profile_connected_mask & (uint8_t)BIT(shown.profile - 1)) != 0;
-    draw_text(active_connected ? "connected" : "idle", 2, 38, 64, &lv_font_unscii_8, FG_COLOR,
-              LV_TEXT_ALIGN_CENTER);
+    /* montserrat_12, because "connected" is 9 characters and the 8 px unscii
+     * grid would push the last one past the 68 px panel. */
+    draw_text(active_connected ? "connected" : "idle", 0, 36, DESIGN_W,
+              &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
     snprintf(text, sizeof(text), "%s  B%u", shown.endpoint_usb ? "USB" : "BLE",
              (unsigned)shown.profile);
@@ -408,12 +413,14 @@ static void render_peripheral(void) {
 
     lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
 
-    /* Its own power state. */
-    draw_battery(2, 3, 60, 14, shown.battery);
-    snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
-    draw_text(text, 2, 20, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    /* Its own power state: same lie while charging, same honest answer. */
     if (shown.charging) {
-        draw_bolt(50, 22);
+        draw_bolt(27, 2);
+        draw_text("CHG", 2, 22, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    } else {
+        draw_battery(2, 3, 60, 14, shown.battery);
+        snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
+        draw_text(text, 2, 20, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
     }
 
     draw_line(2, 42, 66, 42, 1, false);

@@ -8,6 +8,7 @@ config BEOPYLAR_DISPLAY
 	bool "Beopylar custom status screen for the nice!view panels"
 	depends on ZMK_DISPLAY
 	select LV_USE_CANVAS
+	select LV_FONT_MONTSERRAT_12
 	select LV_FONT_MONTSERRAT_14
 	select LV_FONT_MONTSERRAT_16
 	select LV_FONT_MONTSERRAT_28

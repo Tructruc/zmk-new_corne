@@ -59,10 +59,9 @@
          *   Shift      -> capitals, ; : ? and the number row's symbols on NUM
          *   1dk (W)    -> é è à ç œ ù î û ê ô ñ æ ß ŭ and the dead keys ´ ` ^ ¨ ~
          *
-         *   hold left  thumb 1   -> NUM   (tap = ESC).  NUM is a numpad on the
-         *                                  RIGHT hand, so a number is typed one
-         *                                  handed while the left thumb holds,
-         *                                  and the left hand keeps its letters.
+         *   tap encoder click    -> NUM   (toggle, so both hands keep typing;
+         *                                  tap again to leave.  The click is
+         *                                  mute on FN.)
          *   hold left  thumb 3   -> FN    (bluetooth, underglow, media, reset)
          *   5-way: arrows, ENTER on press.  Right thumb 2 is a plain BSPC so
          *   that holding it repeats.
@@ -74,25 +73,24 @@
             bindings = <
 &none     &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
 &none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &kp ENTER   &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
-&none     &kp Z    &kp X    &kp C    &kp V    &kp B               &kp C_MUTE         &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
-                                     &lt 1 ESC     &mt LSHFT TAB  &lt 2 ENTER                          &mt LCTRL SPACE  &kp BSPC   &kp RALT
+&none     &kp Z    &kp X    &kp C    &kp V    &kp B               &tog 1             &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
+                                     &kp ESC       &mt LSHFT TAB  &lt 2 ENTER                          &mt LCTRL SPACE  &kp BSPC   &kp RALT
             >;
 
             sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;
         };
 
-        /* NUM – the number row is the only thing these 30 keys cannot reach on
-         * their own, so NUM is laid out as a numpad under the right hand and
-         * the left hand keeps typing letters (&trans).  The OS layout still
-         * decides what the digits look like: Shift gives the number row's
-         * symbols (! @ # $ % ^ & * ( )), AltGr its subscripts.
+        /* NUM – toggled from the encoder click, so both hands stay free.  The
+         * number row is the only thing these 30 keys cannot reach on their own.
+         * The OS layout still decides what the digits look like: Shift gives
+         * the number row's symbols (! @ # $ % ^ & * ( )), AltGr its subscripts.
          */
         number_layer {
             display-name = "NUM";
             bindings = <
-&none     &trans      &trans      &trans      &trans      &trans                                &trans                       &kp N7    &kp N8   &kp N9   &kp MINUS &kp EQUAL &none
-&none     &trans      &trans      &trans      &trans      &trans                       &trans  &trans  &trans                &kp N4    &kp N5   &kp N6   &kp COMMA &kp DOT   &none
-&none     &trans      &trans      &trans      &trans      &trans               &trans         &trans                       &kp N1    &kp N2   &kp N3   &kp N0   &trans    &none
+&none     &kp N1      &kp N2      &kp N3      &kp N4      &kp N5                                &trans                       &kp N6   &kp N7   &kp N8   &kp N9   &kp N0    &none
+&none     &trans      &trans      &trans      &trans      &trans                       &trans  &trans  &trans                &trans   &trans   &trans   &trans   &trans    &none
+&none     &trans      &trans      &trans      &trans      &trans               &trans         &trans                       &trans   &trans   &trans   &trans   &trans    &none
                                      &trans  &trans  &trans                                     &trans  &trans  &trans
             >;
 
@@ -105,7 +103,7 @@
             bindings = <
 &none     &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4                           &trans                        &bt BT_CLR  &out OUT_USB  &out OUT_BLE  &sys_reset  &bootloader  &none
 &none     &rgb_ug RGB_TOG  &rgb_ug RGB_EFF  &rgb_ug RGB_BRI  &rgb_ug RGB_BRD  &rgb_ug RGB_HUI     &trans  &trans  &trans                &rgb_ug RGB_HUD  &rgb_ug RGB_SPI  &rgb_ug RGB_SPD  &soft_off  &trans  &none
-&none     &kp C_PREV    &kp C_PP      &kp C_NEXT    &kp C_MUTE    &trans                    &trans         &trans                &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &none
+&none     &kp C_PREV    &kp C_PP      &kp C_NEXT    &kp C_MUTE    &trans                    &kp C_MUTE     &trans                &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &none
                                      &trans  &trans  &trans                                     &trans  &trans  &trans
             >;
 

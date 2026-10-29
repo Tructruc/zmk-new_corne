@@ -35,7 +35,7 @@ layers:
   - C
   - V
   - B
-  - MUTE
+  - NUM
   - ↓
   - N
   - M
@@ -43,7 +43,7 @@ layers:
   - {t: ., s: '>'}
   - {t: /, s: '?'}
   - {t: NONE, type: none}
-  - {t: ESC, h: NUM}
+  - ESC
   - {t: TAB, h: SFT}
   - {t: ENTER, h: FN}
   - {t: SPC, h: CTL}
@@ -51,48 +51,48 @@ layers:
   - ALT
   NUM:
   - {t: NONE, type: none}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: '7', s: '&'}
-  - {t: '8', s: '*'}
-  - {t: '9', s: (}
-  - {t: '-', s: _}
-  - {t: '=', s: +}
-  - {t: NONE, type: none}
-  - {t: NONE, type: none}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: '4', s: $}
-  - {t: '5', s: '%'}
-  - {t: '6', s: ^}
-  - {t: ',', s: <}
-  - {t: ., s: '>'}
-  - {t: NONE, type: none}
-  - {t: NONE, type: none}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
   - {t: '1', s: '!'}
   - {t: '2', s: '@'}
   - {t: '3', s: '#'}
+  - {t: '4', s: $}
+  - {t: '5', s: '%'}
+  - {t: TRANS, type: trans}
+  - {t: '6', s: ^}
+  - {t: '7', s: '&'}
+  - {t: '8', s: '*'}
+  - {t: '9', s: (}
   - {t: '0', s: )}
+  - {t: NONE, type: none}
+  - {t: NONE, type: none}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
   - {t: NONE, type: none}
-  - {type: held}
+  - {t: NONE, type: none}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: TRANS, type: trans}
+  - {t: NONE, type: none}
+  - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
@@ -133,7 +133,7 @@ layers:
   - NEXT
   - MUTE
   - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
+  - MUTE
   - {t: TRANS, type: trans}
   - F1
   - F2
