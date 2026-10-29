@@ -38,17 +38,18 @@
          *   Shift      -> capitals, ; : ? and the number row's symbols on NUM
          *   1dk (W)    -> é è à ç œ ù î û ê ô ñ æ ß ŭ and the dead keys ´ ` ^ ¨ ~
          *
-         *   hold right thumb 2 -> NUM   (the number row, nothing else)
-         *   hold left  thumb 3 -> FN    (bluetooth, underglow, media, reset)
-         *   5-way in the middle: arrows, enter on press
+         *   hold 5-way press     -> NUM   (the number row, nothing else)
+         *   hold left  thumb 3   -> FN    (bluetooth, underglow, media, reset)
+         *   5-way: arrows, enter on tap; right thumb 2 is a plain BSPC so that
+         *   holding it repeats, and tapping the 5-way still gives ENTER
          */
         default_layer {
             display-name = "BASE";
             bindings = <
 &none     &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
-&none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &kp ENTER  &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
+&none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &lt 1 ENTER  &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
 &none     &kp Z    &kp X    &kp C    &kp V    &kp B               &kp C_MUTE         &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
-                                     &mt LGUI ESC  &mt LSHFT TAB  &lt 2 ENTER                          &mt LCTRL SPACE  &lt 1 BSPC  &kp RALT
+                                     &mt LGUI ESC  &mt LSHFT TAB  &lt 2 ENTER                          &mt LCTRL SPACE  &kp BSPC   &kp RALT
             >;
 
             sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;

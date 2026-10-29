@@ -8,16 +8,20 @@ config BEOPYLAR_DISPLAY
 	bool "Beopylar custom status screen for the nice!view panels"
 	depends on ZMK_DISPLAY
 	select LV_USE_CANVAS
+	select LV_FONT_MONTSERRAT_14
 	select LV_FONT_MONTSERRAT_16
 	select LV_FONT_UNSCII_8
 	# The typing-speed readout only exists on the central half, and in this ZMK
 	# revision wpm.c does not link on a peripheral, so only pull it in there.
 	select ZMK_WPM if !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
 	help
-	  Replaces the stock nice!view widgets with a single hand-drawn 160x68
-	  canvas: battery, active layer, output/profile, held modifiers and a
-	  WPM history sparkline on the central half, battery and split link
-	  state on the peripheral half.
+	  Replaces the stock nice!view widgets with a single hand-drawn screen
+	  that is designed in portrait (the panel is mounted vertically on the
+	  eyelash_corne) and rotated into the 160x68 panel buffer at paint time.
+
+	  Central half: battery + charging bolt, active layer, output/profile,
+	  held Alt/Shift, the other half's battery when it is in touch, and WPM.
+	  Peripheral half: battery + charging bolt and the link to the central.
 
 	  Requires the shield to select the custom status screen (nice_view
 	  does, via Kconfig.defconfig) and CONFIG_NICE_VIEW_WIDGET_STATUS=n so

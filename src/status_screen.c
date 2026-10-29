@@ -1,23 +1,30 @@
 /*
- * Beopylar status screen for the eyelash_corne nice!view panels.
+ * Beopylar status screen for the nice!view panels.
  *
- * The stock nice!view widget rotates three 68x68 canvases behind each other on
- * a 160x68 panel, so most of the right side is clipped and the rest is three
- * cramped tiles. This replaces it with one 160x68 canvas that is laid out by
- * hand:
+ * The nice!view is a 160x68 strip that sits vertically on the eyelash_corne, so
+ * the screen is *designed* on a 68x160 portrait canvas and copied into the panel
+ * buffer rotated by 90 degrees (see present()).  Drawing in portrait keeps the
+ * layout readable while the copy loop keeps the rotation exact and testable.
  *
- *   CENTRAL (left half)                                PERIPHERAL (right half)
- *   +---------------------------------------------+    +----------------------+
- *   | [==] 87%   [ BASE ]               (USB)     |    | RIGHT                |
- *   | ------------------------------------------- |    | [====] 64%           |
- *   | [CMD] [CTL] [ALT] [SFT]          WPM        |    |                      |
- *   |                                    72       |    |   * LINKED           |
- *   |  ~~~~ WPM history sparkline ~~~~            |    +----------------------+
- *   +---------------------------------------------+
+ * Central half (left):
  *
- * Everything is redrawn into the canvas buffer on each state change and the
- * canvas is invalidated once, so LVGL only repaints what changed.
+ *     +--------------------+      battery bar, percentage, charging bolt
+ *     | [#########]   88%  |
+ *     | ------------------ |
+ *     |       BASE         |      active layer, filled badge
+ *     | ----               |
+ *     | USB           B2   |      output and BLE profile
+ *     | ----               |
+ *     |  ALT    SFT        |      held modifiers (polled, ZMK does not raise
+ *     | ----               |      a modifier event in this revision)
+ *     |  * R 87%           |      right half heard within the last 90 s
+ *     | ----               |
+ *     | WPM            84  |
+ *     +--------------------+
  *
+ * Peripheral half (right): battery, charging bolt and the link to the central.
+ *
+ * Copyright (c) 2024 The ZMK Contributors
  * SPDX-License-Identifier: MIT
  */
 
@@ -26,12 +33,9 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <lvgl.h>
-
-#include <dt-bindings/zmk/modifiers.h>
 
 #include <zmk/battery.h>
 #include <zmk/ble.h>
@@ -47,7 +51,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/events/ble_active_profile_changed.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/layer_state_changed.h>
-#include <zmk/events/modifiers_state_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/events/wpm_state_changed.h>
 
@@ -56,15 +59,30 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/split/bluetooth/peripheral.h>
 #endif
 
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+#include <zmk/split/central.h>
+#endif
+
+LV_IMG_DECLARE(bolt);
+
 /* ------------------------------------------------------------------------- */
 /* Layout                                                                    */
 /* ------------------------------------------------------------------------- */
 
-#define SCREEN_W 160
-#define SCREEN_H 68
+/* Panel, in the orientation the display driver talks to it. */
+#define PANEL_W 160
+#define PANEL_H 68
 
-/* Number of samples kept for the WPM sparkline. */
-#define WPM_POINTS 12
+/* Design canvas: the panel rotated a quarter turn, which is how it is mounted. */
+#define DESIGN_W 68
+#define DESIGN_H 160
+
+/* How often the modifier state is sampled; ZMK raises no modifier event. */
+#define MOD_POLL_MS 250
+
+/* The right half reports its battery on every ZMK battery interval; if nothing
+ * arrives for this long it is treated as out of touch. */
+#define PEER_STALE_MS 90000
 
 /* The right half of a split board has no keymap state of its own to show. */
 #define BEOPYLAR_PERIPHERAL                                                                        \
@@ -78,22 +96,26 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define FG_COLOR lv_color_black()
 #endif
 
-static lv_obj_t *canvas;
-static lv_color_t canvas_buf[SCREEN_W * SCREEN_H];
+static lv_obj_t *canvas; /* portrait scratch canvas, everything is drawn here */
+static lv_obj_t *panel;  /* what the display driver renders */
+static lv_color_t design_buf[DESIGN_W * DESIGN_H];
+static lv_color_t panel_buf[PANEL_W * PANEL_H];
 
 /* Everything the two renders need, already resolved from the ZMK APIs so the
  * drawing code never has to call back into the system from the display thread. */
 struct display_state {
     uint8_t battery;
-    bool usb;
-    uint8_t profile; /* 1-based, as printed on the pill */
+    bool charging;
+    bool endpoint_usb;
+    uint8_t profile; /* 1-based, as printed next to the output */
     bool profile_bonded;
-    bool profile_connected;
     const char *layer_name;
     zmk_mod_flags_t mods;
     uint8_t wpm;
-    uint8_t wpm_history[WPM_POINTS];
-    bool link;
+    bool link;            /* peripheral: link to the central */
+    uint8_t peer_battery; /* central: last battery level reported by the other half */
+    bool peer_heard;
+    int64_t peer_ts;
 };
 
 static struct display_state shown;
@@ -122,7 +144,7 @@ static void stroke_rect(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radi
     lv_canvas_draw_rect(canvas, x, y, w, h, &dsc);
 }
 
-static void __unused draw_line(int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t width, bool round) {
+static void draw_line(int32_t x1, int32_t y1, int32_t x2, int32_t y2, int32_t width, bool round) {
     lv_point_t points[2] = {{x1, y1}, {x2, y2}};
     lv_draw_line_dsc_t dsc;
     lv_draw_line_dsc_init(&dsc);
@@ -143,6 +165,7 @@ static void draw_text(const char *text, int32_t x, int32_t y, int32_t max_w,
     lv_canvas_draw_text(canvas, x, y, max_w, &dsc, text);
 }
 
+#if !BEOPYLAR_PERIPHERAL
 static void draw_dot(int32_t x, int32_t y, int32_t r, bool filled) {
     lv_draw_arc_dsc_t dsc;
     lv_draw_arc_dsc_init(&dsc);
@@ -151,30 +174,50 @@ static void draw_dot(int32_t x, int32_t y, int32_t r, bool filled) {
     dsc.rounded = 1;
     lv_canvas_draw_arc(canvas, x, y, r, 0, 360, &dsc);
 }
+#endif
 
+/* Battery body with a terminal nub and the level as a filled bar. */
 static void draw_battery(int32_t x, int32_t y, int32_t w, int32_t h, uint8_t level) {
     uint8_t clamped = level > 100 ? 100 : level;
 
-    /* Body, terminal nub, then the level as a filled bar inside the body. */
     stroke_rect(x, y, w, h, 2, 1);
-    fill_rect(x + w, y + h / 2 - 2, 2, 4, FG_COLOR, 0);
+    fill_rect(x + w + 1, y + h / 2 - 3, 3, 6, FG_COLOR, 0);
 
-    int32_t inner_w = (w - 5) * clamped / 100;
+    int32_t inner_w = (w - 6) * clamped / 100;
     if (inner_w > 0) {
         fill_rect(x + 2, y + 2, inner_w, h - 4, FG_COLOR, 1);
     }
 }
 
+static void draw_bolt(int32_t x, int32_t y) {
+    lv_draw_img_dsc_t img_dsc;
+    lv_draw_img_dsc_init(&img_dsc);
+    lv_canvas_draw_img(canvas, x, y, &bolt, &img_dsc);
+}
+
+#if !BEOPYLAR_PERIPHERAL
 /* A modifier indicator: filled while held, outlined while released. */
-static void __unused draw_mod_pill(int32_t x, int32_t y, int32_t w, int32_t h, const char *label,
+static void draw_mod_chip(int32_t x, int32_t y, int32_t w, int32_t h, const char *label,
                           bool active) {
     if (active) {
         fill_rect(x, y, w, h, FG_COLOR, 3);
-        draw_text(label, x, y + 2, w, &lv_font_unscii_8, BG_COLOR, LV_TEXT_ALIGN_CENTER);
+        draw_text(label, x, y + 2, w, &lv_font_montserrat_14, BG_COLOR, LV_TEXT_ALIGN_CENTER);
     } else {
         stroke_rect(x, y, w, h, 3, 1);
-        draw_text(label, x, y + 2, w, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        draw_text(label, x, y + 2, w, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
     }
+}
+#endif
+
+/* Copy the portrait design into the landscape panel buffer, rotating it a
+ * quarter turn counter-clockwise: design (dx, dy) lands at panel (159 - dy, dx). */
+static void present(void) {
+    for (int32_t dy = 0; dy < DESIGN_H; dy++) {
+        for (int32_t dx = 0; dx < DESIGN_W; dx++) {
+            panel_buf[dx * PANEL_W + (PANEL_H - 1 - dy)] = design_buf[dy * DESIGN_W + dx];
+        }
+    }
+    lv_obj_invalidate(panel);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -183,88 +226,57 @@ static void __unused draw_mod_pill(int32_t x, int32_t y, int32_t w, int32_t h, c
 
 #if !BEOPYLAR_PERIPHERAL
 
-static void draw_wpm_graph(void) {
-    const int32_t x0 = 3;
-    const int32_t y_base = 66;
-    const int32_t y_top = 48;
-    const int32_t step = 10;
-
-    draw_line(x0, y_base, x0 + step * (WPM_POINTS - 1), y_base, 1, false);
-
-    uint8_t max = 1;
-    for (int i = 0; i < WPM_POINTS; i++) {
-        if (shown.wpm_history[i] > max) {
-            max = shown.wpm_history[i];
-        }
-    }
-    /* Keep a floor on the scale so a short burst does not fill the whole box. */
-    if (max < 20) {
-        max = 20;
-    }
-
-    lv_point_t points[WPM_POINTS];
-    for (int i = 0; i < WPM_POINTS; i++) {
-        points[i].x = x0 + i * step;
-        points[i].y = y_base - (int32_t)shown.wpm_history[i] * (y_base - y_top) / max;
-    }
-
-    lv_draw_line_dsc_t dsc;
-    lv_draw_line_dsc_init(&dsc);
-    dsc.color = FG_COLOR;
-    dsc.width = 2;
-    dsc.round_start = 1;
-    dsc.round_end = 1;
-    lv_canvas_draw_line(canvas, points, WPM_POINTS, &dsc);
-
-    /* Mark the newest sample. */
-    draw_dot(points[WPM_POINTS - 1].x, points[WPM_POINTS - 1].y, 2, true);
-}
-
 static void render_central(void) {
     char text[16];
 
     lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
 
-    /* Row 1: battery, layer badge, output. */
-    draw_battery(3, 4, 26, 13, shown.battery);
+    /* Battery and, next to it, the level as a number. */
+    draw_battery(2, 2, 60, 14, shown.battery);
     snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
-    draw_text(text, 33, 0, 36, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    draw_text(text, 2, 18, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    if (shown.charging) {
+        draw_bolt(50, 20);
+    }
 
+    draw_line(2, 40, 66, 40, 1, false);
+
+    /* Active layer. */
     const char *layer = (shown.layer_name != NULL && shown.layer_name[0] != '\0')
                             ? shown.layer_name
                             : "?";
-    fill_rect(70, 2, 56, 19, FG_COLOR, 4);
-    draw_text(layer, 70, 3, 56, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
+    fill_rect(2, 44, 64, 24, FG_COLOR, 4);
+    draw_text(layer, 2, 46, 64, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    if (shown.usb) {
-        fill_rect(128, 3, 29, 17, FG_COLOR, 4);
-        draw_text("USB", 128, 8, 29, &lv_font_unscii_8, BG_COLOR, LV_TEXT_ALIGN_CENTER);
-    } else if (shown.profile_bonded) {
+    /* Output and profile. */
+    stroke_rect(2, 72, 64, 20, 4, 1);
+    draw_text(shown.endpoint_usb ? "USB" : "BLE", 8, 74, 28, &lv_font_montserrat_14, FG_COLOR,
+              LV_TEXT_ALIGN_LEFT);
+    if (shown.profile_bonded) {
         snprintf(text, sizeof(text), "B%u", (unsigned)shown.profile);
-        if (shown.profile_connected) {
-            fill_rect(128, 3, 29, 17, FG_COLOR, 4);
-            draw_text(text, 128, 8, 29, &lv_font_unscii_8, BG_COLOR, LV_TEXT_ALIGN_CENTER);
-        } else {
-            stroke_rect(128, 3, 29, 17, 4, 1);
-            draw_text(text, 128, 8, 29, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-        }
     } else {
-        draw_text("--", 128, 8, 29, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        snprintf(text, sizeof(text), "--");
     }
+    draw_text(text, 36, 74, 26, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
 
-    draw_line(3, 23, 156, 23, 1, false);
+    /* Held modifiers: the two that change what the layout types. */
+    draw_mod_chip(2, 96, 30, 20, "ALT", (shown.mods & (MOD_LALT | MOD_RALT)) != 0);
+    draw_mod_chip(36, 96, 30, 20, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
 
-    /* Row 2: held modifiers. */
-    draw_mod_pill(3, 26, 26, 13, "CMD", (shown.mods & (MOD_LGUI | MOD_RGUI)) != 0);
-    draw_mod_pill(31, 26, 26, 13, "CTL", (shown.mods & (MOD_LCTL | MOD_RCTL)) != 0);
-    draw_mod_pill(59, 26, 26, 13, "ALT", (shown.mods & (MOD_LALT | MOD_RALT)) != 0);
-    draw_mod_pill(87, 26, 26, 13, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
+    /* The other half: lit dot once it has reported in recently. */
+    bool peer = shown.peer_heard && (k_uptime_get() - shown.peer_ts) < PEER_STALE_MS;
+    draw_dot(8, 128, 4, peer);
+    if (peer && shown.peer_battery > 0) {
+        snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
+    } else {
+        snprintf(text, sizeof(text), "R --");
+    }
+    draw_text(text, 16, 118, 50, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_LEFT);
 
 #if IS_ENABLED(CONFIG_ZMK_WPM)
-    draw_text("WPM", 117, 27, 40, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
+    draw_text("WPM", 2, 143, 30, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_LEFT);
     snprintf(text, sizeof(text), "%u", (unsigned)shown.wpm);
-    draw_text(text, 117, 36, 40, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
-    draw_wpm_graph();
+    draw_text(text, 34, 138, 32, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
 #endif
 }
 
@@ -280,23 +292,32 @@ static void render_peripheral(void) {
     char text[16];
 
     lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
-    stroke_rect(3, 3, 154, 62, 8, 1);
 
-    draw_text("RIGHT", 11, 10, 60, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_LEFT);
-
-    draw_battery(11, 28, 56, 22, shown.battery);
+    /* The block is centred vertically: nothing else happens on this half. */
+    draw_battery(2, 37, 60, 14, shown.battery);
     snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
-    draw_text(text, 75, 28, 60, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    draw_text(text, 2, 53, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    if (shown.charging) {
+        draw_bolt(50, 55);
+    }
 
-    draw_dot(98, 54, 3, shown.link);
-    draw_text(shown.link ? "LINKED" : "WAIT", 106, 51, 46, &lv_font_unscii_8, FG_COLOR,
-              LV_TEXT_ALIGN_LEFT);
+    draw_line(2, 76, 66, 76, 1, false);
+
+    draw_text("RIGHT", 2, 82, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    if (shown.link) {
+        fill_rect(2, 98, 64, 24, FG_COLOR, 4);
+        draw_text("LINKED", 2, 100, 64, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
+    } else {
+        stroke_rect(2, 98, 64, 24, 4, 1);
+        draw_text("WAIT", 2, 100, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    }
 }
 
 #endif /* BEOPYLAR_PERIPHERAL */
 
 static void render(void) {
-    if (canvas == NULL) {
+    if (canvas == NULL || panel == NULL) {
         return;
     }
 
@@ -306,7 +327,7 @@ static void render(void) {
     render_central();
 #endif
 
-    lv_obj_invalidate(canvas);
+    present();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -334,9 +355,29 @@ ZMK_DISPLAY_WIDGET_LISTENER(battery_ui, struct battery_ui_state, battery_ui_upda
                             battery_ui_get_state)
 
 ZMK_SUBSCRIPTION(battery_ui, zmk_battery_state_changed);
+
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
-ZMK_SUBSCRIPTION(battery_ui, zmk_usb_conn_state_changed);
-#endif
+
+struct usb_ui_state {
+    bool powered;
+};
+
+static struct usb_ui_state usb_ui_get_state(const zmk_event_t *eh) {
+    return (struct usb_ui_state){
+        .powered = zmk_usb_is_powered(),
+    };
+}
+
+static void usb_ui_update_cb(struct usb_ui_state state) {
+    shown.charging = state.powered;
+    render();
+}
+
+ZMK_DISPLAY_WIDGET_LISTENER(usb_ui, struct usb_ui_state, usb_ui_update_cb, usb_ui_get_state)
+
+ZMK_SUBSCRIPTION(usb_ui, zmk_usb_conn_state_changed);
+
+#endif /* IS_ENABLED(CONFIG_USB_DEVICE_STACK) */
 
 #if !BEOPYLAR_PERIPHERAL
 
@@ -344,7 +385,6 @@ struct output_ui_state {
     struct zmk_endpoint_instance endpoint;
     uint8_t profile;
     bool bonded;
-    bool connected;
 };
 
 static struct output_ui_state output_ui_get_state(const zmk_event_t *eh) {
@@ -352,15 +392,13 @@ static struct output_ui_state output_ui_get_state(const zmk_event_t *eh) {
         .endpoint = zmk_endpoints_selected(),
         .profile = (uint8_t)(zmk_ble_active_profile_index() + 1),
         .bonded = !zmk_ble_active_profile_is_open(),
-        .connected = zmk_ble_active_profile_is_connected(),
     };
 }
 
 static void output_ui_update_cb(struct output_ui_state state) {
-    shown.usb = state.endpoint.transport == ZMK_TRANSPORT_USB;
+    shown.endpoint_usb = state.endpoint.transport == ZMK_TRANSPORT_USB;
     shown.profile = state.profile;
     shown.profile_bonded = state.bonded;
-    shown.profile_connected = state.connected;
     render();
 }
 
@@ -370,9 +408,6 @@ ZMK_DISPLAY_WIDGET_LISTENER(output_ui, struct output_ui_state, output_ui_update_
 ZMK_SUBSCRIPTION(output_ui, zmk_endpoint_changed);
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 ZMK_SUBSCRIPTION(output_ui, zmk_ble_active_profile_changed);
-#endif
-#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
-ZMK_SUBSCRIPTION(output_ui, zmk_usb_conn_state_changed);
 #endif
 
 struct layer_ui_state {
@@ -397,24 +432,58 @@ ZMK_DISPLAY_WIDGET_LISTENER(layer_ui, struct layer_ui_state, layer_ui_update_cb,
 
 ZMK_SUBSCRIPTION(layer_ui, zmk_layer_state_changed);
 
-struct mods_ui_state {
-    zmk_mod_flags_t mods;
+/* ZMK never raises zmk_modifiers_state_changed (see behavior_hold_tap.c), so the
+ * modifier state is sampled instead of subscribed to. */
+static void mod_poll_handler(struct k_work *work) {
+    bool dirty = false;
+
+    zmk_mod_flags_t mods = zmk_hid_get_explicit_mods();
+    if (mods != shown.mods) {
+        shown.mods = mods;
+        dirty = true;
+    }
+
+    if (shown.peer_heard && (k_uptime_get() - shown.peer_ts) >= PEER_STALE_MS) {
+        shown.peer_heard = false;
+        dirty = true;
+    }
+
+    if (dirty) {
+        render();
+    }
+
+    k_work_reschedule_for(zmk_display_work_q(), &mod_poll, K_MSEC(MOD_POLL_MS));
+}
+
+static K_WORK_DELAYABLE_DEFINE(mod_poll, mod_poll_handler);
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+
+struct peer_ui_state {
+    uint8_t level;
 };
 
-static struct mods_ui_state mods_ui_get_state(const zmk_event_t *eh) {
-    return (struct mods_ui_state){
-        .mods = zmk_hid_get_explicit_mods(),
+static struct peer_ui_state peer_ui_get_state(const zmk_event_t *eh) {
+    const struct zmk_peripheral_battery_state_changed *ev =
+        as_zmk_peripheral_battery_state_changed(eh);
+
+    return (struct peer_ui_state){
+        .level = (ev != NULL) ? ev->state_of_charge : 0,
     };
 }
 
-static void mods_ui_update_cb(struct mods_ui_state state) {
-    shown.mods = state.mods;
+static void peer_ui_update_cb(struct peer_ui_state state) {
+    shown.peer_battery = state.level;
+    shown.peer_heard = true;
+    shown.peer_ts = k_uptime_get();
     render();
 }
 
-ZMK_DISPLAY_WIDGET_LISTENER(mods_ui, struct mods_ui_state, mods_ui_update_cb, mods_ui_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(peer_ui, struct peer_ui_state, peer_ui_update_cb, peer_ui_get_state)
 
-ZMK_SUBSCRIPTION(mods_ui, zmk_modifiers_state_changed);
+ZMK_SUBSCRIPTION(peer_ui, zmk_peripheral_battery_state_changed);
+
+#endif /* CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING */
 
 #if IS_ENABLED(CONFIG_ZMK_WPM)
 
@@ -430,11 +499,9 @@ static struct wpm_ui_state wpm_ui_get_state(const zmk_event_t *eh) {
 
 static void wpm_ui_update_cb(struct wpm_ui_state state) {
     if (state.wpm != shown.wpm) {
-        memmove(&shown.wpm_history[0], &shown.wpm_history[1], sizeof(shown.wpm_history) - 1);
-        shown.wpm_history[WPM_POINTS - 1] = state.wpm;
         shown.wpm = state.wpm;
+        render();
     }
-    render();
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(wpm_ui, struct wpm_ui_state, wpm_ui_update_cb, wpm_ui_get_state)
@@ -474,24 +541,38 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
+    panel = lv_canvas_create(screen);
+    lv_canvas_set_buffer(panel, panel_buf, PANEL_W, PANEL_H, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_align(panel, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    /* Scratch canvas the drawing code works on; never shown by itself. */
     canvas = lv_canvas_create(screen);
-    lv_canvas_set_buffer(canvas, canvas_buf, SCREEN_W, SCREEN_H, LV_IMG_CF_TRUE_COLOR);
-    lv_obj_align(canvas, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_canvas_set_buffer(canvas, design_buf, DESIGN_W, DESIGN_H, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
 
     /* Seed the state so the first paint is right before any event arrives.
-     * Everything but the battery is central-only: endpoint, BLE, keymap and
-     * modifier lookups do not exist in a peripheral build. */
+     * Everything but the battery and the USB state is central-only: endpoint,
+     * BLE, keymap and modifier lookups do not exist in a peripheral build. */
     shown.battery = zmk_battery_state_of_charge();
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
+    shown.charging = zmk_usb_is_powered();
+#endif
 
 #if !BEOPYLAR_PERIPHERAL
-    shown.usb = zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB;
+    shown.endpoint_usb = zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB;
     shown.profile = (uint8_t)(zmk_ble_active_profile_index() + 1);
     shown.profile_bonded = !zmk_ble_active_profile_is_open();
-    shown.profile_connected = zmk_ble_active_profile_is_connected();
 
     zmk_keymap_layer_index_t index = zmk_keymap_highest_layer_active();
     shown.layer_name = zmk_keymap_layer_name(zmk_keymap_layer_index_to_id(index));
     shown.mods = zmk_hid_get_explicit_mods();
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+    uint8_t peer_level = 0;
+    if (zmk_split_central_get_peripheral_battery_level(0, &peer_level) == 0 && peer_level > 0) {
+        shown.peer_battery = peer_level;
+    }
+#endif
 
 #if IS_ENABLED(CONFIG_ZMK_WPM)
     shown.wpm = (uint8_t)zmk_wpm_get_state();
@@ -501,18 +582,28 @@ lv_obj_t *zmk_display_status_screen(void) {
 #endif
 
     battery_ui_init();
+#if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
+    usb_ui_init();
+#endif
+
 #if BEOPYLAR_PERIPHERAL
     link_ui_init();
 #else
     output_ui_init();
     layer_ui_init();
-    mods_ui_init();
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+    peer_ui_init();
+#endif
 #if IS_ENABLED(CONFIG_ZMK_WPM)
     wpm_ui_init();
 #endif
 #endif
 
     render();
+
+#if !BEOPYLAR_PERIPHERAL
+    k_work_reschedule_for(zmk_display_work_q(), &mod_poll, K_MSEC(MOD_POLL_MS));
+#endif
 
     return screen;
 }

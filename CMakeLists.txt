@@ -5,7 +5,7 @@
 
 if(CONFIG_BEOPYLAR_DISPLAY)
   zephyr_library()
-  zephyr_library_sources(src/status_screen.c)
+  zephyr_library_sources(src/status_screen.c src/bolt.c)
 
   # ZMK keeps its headers in <zmk app>/include, but exposes that path to the app
   # target only (`target_include_directories(app PRIVATE include)` in
