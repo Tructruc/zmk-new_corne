@@ -1,5 +1,9 @@
+# The config repo is also a Zephyr module: it carries the status screen, its
+# Kconfig knob and the DT binding for the page-flip behavior.
 build:
-  settings:
-     board_root: .
   cmake: .
   kconfig: Kconfig
+  settings:
+     board_root: .
+     # Our DT bindings live in dts/bindings; Zephyr scans <dts_root>/dts/bindings.
+     dts_root: .
