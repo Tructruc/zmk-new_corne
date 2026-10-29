@@ -59,10 +59,13 @@
          *   Shift      -> capitals, ; : ? and the number row's symbols on NUM
          *   1dk (W)    -> é è à ç œ ù î û ê ô ñ æ ß ŭ and the dead keys ´ ` ^ ¨ ~
          *
-         *   hold 5-way press     -> NUM   (the number row, nothing else)
+         *   hold left  thumb 1   -> NUM   (tap = ESC).  NUM is a numpad on the
+         *                                  RIGHT hand, so a number is typed one
+         *                                  handed while the left thumb holds,
+         *                                  and the left hand keeps its letters.
          *   hold left  thumb 3   -> FN    (bluetooth, underglow, media, reset)
-         *   5-way: arrows, enter on tap; right thumb 2 is a plain BSPC so that
-         *   holding it repeats, and tapping the 5-way still gives ENTER
+         *   5-way: arrows, ENTER on press.  Right thumb 2 is a plain BSPC so
+         *   that holding it repeats.
          *   FN + encoder turn  -> flip the status screen (status, link); while a
          *   BLE profile is open for pairing the screen shows that instead
          */
@@ -70,25 +73,26 @@
             display-name = "BASE";
             bindings = <
 &none     &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
-&none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &lt 1 ENTER  &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
+&none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &kp ENTER   &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
 &none     &kp Z    &kp X    &kp C    &kp V    &kp B               &kp C_MUTE         &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
-                                     &mt LGUI ESC  &mt LSHFT TAB  &lt 2 ENTER                          &mt LCTRL SPACE  &kp BSPC   &kp RALT
+                                     &lt 1 ESC     &mt LSHFT TAB  &lt 2 ENTER                          &mt LCTRL SPACE  &kp BSPC   &kp RALT
             >;
 
             sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;
         };
 
-        /* NUM – the number row: literally the only characters these 30 keys
-         * cannot reach on their own. Shift gives that row's symbols
-         * (! @ # $ % ^ & * ( )), AltGr its subscripts, AltGr+Shift superscripts.
-         * Everything else falls through (&trans) so NUM keeps BASE underneath.
+        /* NUM – the number row is the only thing these 30 keys cannot reach on
+         * their own, so NUM is laid out as a numpad under the right hand and
+         * the left hand keeps typing letters (&trans).  The OS layout still
+         * decides what the digits look like: Shift gives the number row's
+         * symbols (! @ # $ % ^ & * ( )), AltGr its subscripts.
          */
         number_layer {
             display-name = "NUM";
             bindings = <
-&none     &kp N1      &kp N2      &kp N3      &kp N4      &kp N5                                &trans                       &kp N6   &kp N7   &kp N8   &kp N9   &kp N0    &none
-&none     &trans      &trans      &trans      &trans      &trans                       &trans  &trans  &trans                &trans   &trans   &trans   &trans   &trans    &none
-&none     &trans      &trans      &trans      &trans      &trans               &trans         &trans                       &trans   &trans   &trans   &trans   &trans    &none
+&none     &trans      &trans      &trans      &trans      &trans                                &trans                       &kp N7    &kp N8   &kp N9   &kp MINUS &kp EQUAL &none
+&none     &trans      &trans      &trans      &trans      &trans                       &trans  &trans  &trans                &kp N4    &kp N5   &kp N6   &kp COMMA &kp DOT   &none
+&none     &trans      &trans      &trans      &trans      &trans               &trans         &trans                       &kp N1    &kp N2   &kp N3   &kp N0   &trans    &none
                                      &trans  &trans  &trans                                     &trans  &trans  &trans
             >;
 

@@ -9,17 +9,16 @@
  * Central half (left):
  *
  *     +--------------------+      battery bar, percentage, charging bolt
- *     | [#########]   88%  |
- *     | ------------------ |
+ *     | [#########]   88%  |      (ZMK has no charge state, so the bolt means
+ *     | ------------------ |      "USB is powered")
  *     |       BASE         |      active layer, filled badge
- *     | ----               |
+ *     | ------------------ |
  *     | USB           B2   |      output and BLE profile
- *     | ----               |
- *     |  ALT    SFT        |      held modifiers (polled, ZMK does not raise
- *     | ----               |      a modifier event in this revision)
+ *     | ------------------ |
+ *     |  CTL     |  GUI    |      held modifiers, polled every 250 ms because
+ *     |  ALT     |  SFT    |      this ZMK raises no modifier event
+ *     | ------------------ |
  *     |  * R 87%           |      right half heard within the last 90 s
- *     | ----               |
- *     | WPM            84  |
  *     +--------------------+
  *
  * Peripheral half (right): battery, charging bolt and the link to the central.
@@ -45,7 +44,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/hid.h>
 #include <zmk/keymap.h>
 #include <zmk/usb.h>
-#include <zmk/wpm.h>
 
 #include <zmk/events/battery_state_changed.h>
 #include <zmk/events/ble_active_profile_changed.h>
@@ -53,7 +51,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/events/keycode_state_changed.h>
-#include <zmk/events/wpm_state_changed.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE) && !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #include <zmk/events/split_peripheral_status_changed.h>
@@ -131,7 +128,6 @@ struct display_state {
     bool profile_bonded;
     char layer_name[12];
     zmk_mod_flags_t mods;
-    uint8_t wpm;
     bool link;            /* peripheral: link to the central */
     uint8_t peer_battery; /* central: last battery level reported by the other half */
     bool peer_heard;
@@ -324,25 +320,24 @@ static void render_central(void) {
     }
     draw_text(text, 36, 74, 26, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
 
-    /* Held modifiers: the two that change what the layout types. */
-    draw_mod_chip(2, 96, 30, 20, "ALT", (shown.mods & (MOD_LALT | MOD_RALT)) != 0);
-    draw_mod_chip(36, 96, 30, 20, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
+    /* Every modifier, so combinations read at a glance: a chip fills in while
+     * that modifier is held. */
+    draw_mod_chip(2, 96, 30, 20, "CTL", (shown.mods & (MOD_LCTL | MOD_RCTL)) != 0);
+    draw_mod_chip(36, 96, 30, 20, "GUI", (shown.mods & (MOD_LGUI | MOD_RGUI)) != 0);
+    draw_mod_chip(2, 118, 30, 20, "ALT", (shown.mods & (MOD_LALT | MOD_RALT)) != 0);
+    draw_mod_chip(36, 118, 30, 20, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
+
+    draw_line(2, 142, 66, 142, 1, false);
 
     /* The other half: lit dot once it has reported in recently. */
     bool peer = shown.peer_age_min != PEER_AGE_NEVER && shown.peer_age_min != PEER_AGE_STALE;
-    draw_dot(8, 128, 4, peer);
+    draw_dot(9, 150, 4, peer);
     if (peer && shown.peer_battery > 0) {
         snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
     } else {
         snprintf(text, sizeof(text), "R --");
     }
-    draw_text(text, 16, 118, 50, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_LEFT);
-
-#if IS_ENABLED(CONFIG_ZMK_WPM)
-    draw_text("WPM", 2, 143, 30, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_LEFT);
-    snprintf(text, sizeof(text), "%u", (unsigned)shown.wpm);
-    draw_text(text, 34, 138, 32, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
-#endif
+    draw_text(text, 18, 144, 48, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_LEFT);
 }
 
 /* LINK page: the five BLE profiles, the output in use and what the other half
@@ -366,18 +361,21 @@ static void render_link(void) {
         }
     }
 
+    draw_text(shown.profile_connected ? "connected" : "idle", 2, 38, 64, &lv_font_unscii_8,
+              FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
     snprintf(text, sizeof(text), "%s  B%u", shown.endpoint_usb ? "USB" : "BLE",
              (unsigned)shown.profile);
-    draw_text(text, 2, 40, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 52, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    draw_line(2, 62, 66, 62, 1, false);
+    draw_line(2, 74, 66, 74, 1, false);
 
     if (shown.peer_battery > 0 && shown.peer_age_min != PEER_AGE_STALE) {
         snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
     } else {
         snprintf(text, sizeof(text), "R --");
     }
-    draw_text(text, 2, 68, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 80, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
     if (shown.peer_age_min == PEER_AGE_NEVER) {
         snprintf(text, sizeof(text), "waiting");
@@ -388,7 +386,7 @@ static void render_link(void) {
     } else {
         snprintf(text, sizeof(text), "%u min ago", (unsigned)shown.peer_age_min);
     }
-    draw_text(text, 2, 90, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 104, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
     snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
              (unsigned)PAGE_MANUAL_COUNT);
@@ -722,31 +720,6 @@ ZMK_SUBSCRIPTION(peer_ui, zmk_peripheral_battery_state_changed);
 
 #endif /* CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING */
 
-#if IS_ENABLED(CONFIG_ZMK_WPM)
-
-struct wpm_ui_state {
-    uint8_t wpm;
-};
-
-static struct wpm_ui_state wpm_ui_get_state(const zmk_event_t *eh) {
-    return (struct wpm_ui_state){
-        .wpm = (uint8_t)zmk_wpm_get_state(),
-    };
-}
-
-static void wpm_ui_update_cb(struct wpm_ui_state state) {
-    if (state.wpm != shown.wpm) {
-        shown.wpm = state.wpm;
-        render();
-    }
-}
-
-ZMK_DISPLAY_WIDGET_LISTENER(wpm_ui, struct wpm_ui_state, wpm_ui_update_cb, wpm_ui_get_state)
-
-ZMK_SUBSCRIPTION(wpm_ui, zmk_wpm_state_changed);
-
-#endif /* IS_ENABLED(CONFIG_ZMK_WPM) */
-
 #else /* BEOPYLAR_PERIPHERAL */
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
@@ -866,9 +839,6 @@ lv_obj_t *zmk_display_status_screen(void) {
     }
 #endif
 
-#if IS_ENABLED(CONFIG_ZMK_WPM)
-    shown.wpm = (uint8_t)zmk_wpm_get_state();
-#endif
 #else
     shown.link = zmk_split_bt_peripheral_is_connected();
 #endif
@@ -886,9 +856,6 @@ lv_obj_t *zmk_display_status_screen(void) {
     layer_ui_init();
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     peer_ui_init();
-#endif
-#if IS_ENABLED(CONFIG_ZMK_WPM)
-    wpm_ui_init();
 #endif
 #endif
 

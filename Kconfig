@@ -12,18 +12,16 @@ config BEOPYLAR_DISPLAY
 	select LV_FONT_MONTSERRAT_16
 	select LV_FONT_MONTSERRAT_28
 	select LV_FONT_UNSCII_8
-	# The typing-speed readout only exists on the central half, and in this ZMK
-	# revision wpm.c does not link on a peripheral, so only pull it in there.
-	select ZMK_WPM if !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
 	help
 	  Replaces the stock nice!view widgets with a single hand-drawn screen
 	  that is designed in portrait (the panel is mounted vertically on the
 	  eyelash_corne) and rotated into the 160x68 panel buffer at paint time.
 
 	  Central half: a status page (battery + charging bolt, active layer,
-	  output/profile, held Alt/Shift, the other half's battery when it is in
-	  touch, WPM) and a link page (BLE profiles, output, peer battery/age).
-	  A third screen takes over while a BLE profile is open for pairing.
+	  output/profile, the four modifiers as chips, the other half's battery
+	  when it is in touch) and a link page (BLE profiles with bonded/connected
+	  state, output, peer battery/age).  A third screen takes over while a BLE
+	  profile is open for pairing.
 	  Peripheral half: its own battery + charging bolt, the layer and output
 	  the central relays over the split link, and the link state.
 
