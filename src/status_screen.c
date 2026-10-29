@@ -878,9 +878,8 @@ lv_obj_t *zmk_display_status_screen(void) {
 #endif
 
 #if BEOPYLAR_PERIPHERAL
-    layer_ui_init();
-    output_ui_init();
     link_ui_init();
+    mirror_ui_init();
 #else
     output_ui_init();
     layer_ui_init();
