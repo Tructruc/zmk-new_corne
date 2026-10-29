@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: MIT
 
 description: |
-  Advance the Beopylar status screen to its next page.
+  Move the Beopylar status screen to another page.
 
-  Bound on the FN layer in config/eyelash_corne.keymap; the screen itself is
-  implemented in src/status_screen.c.
+  One parameter: 1 for the next page, -1 for the previous one. Bound on the FN
+  layer in config/eyelash_corne.keymap through a sensor-rotate wrapper, so
+  twisting the encoder walks the pages; the screen itself is implemented in
+  src/status_screen.c.
 
 compatible: "beopylar,behavior-display-page"
 
-include: zero_param.yaml
+include: one_param.yaml

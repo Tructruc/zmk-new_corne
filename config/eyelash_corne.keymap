@@ -10,13 +10,26 @@
 / {
     /* Encoder click on FN: advance the status screen to its next page. */
     behaviors {
-        display_next: display_next {
+        page_next: page_next {
             compatible = "beopylar,behavior-display-page";
-            #binding-cells = <0>;
+            #binding-cells = <1>;
+        };
+        page_prev: page_prev {
+            compatible = "beopylar,behavior-display-page";
+            #binding-cells = <1>;
         };
     };
 
-    /* Layer-dependent encoder: volume on BASE / FN, RGB brightness on NUM. */
+    /* Encoder rotation on FN flips the status screen page: clockwise to the
+     * next one, counter-clockwise back. Only rotation is wrapped, so the click
+     * keeps falling through to the mute key on BASE. */
+    page_flip: page_flip {
+        compatible = "zmk,behavior-sensor-rotate";
+        #sensor-binding-cells = <0>;
+        bindings = <&page_next 1>, <&page_prev (-1)>;
+    };
+
+    /* Layer-dependent encoder: volume on BASE, RGB brightness on NUM. */
     rgb_encoder: rgb_encoder {
         compatible = "zmk,behavior-sensor-rotate";
         #sensor-binding-cells = <0>;
@@ -50,7 +63,8 @@
          *   hold left  thumb 3   -> FN    (bluetooth, underglow, media, reset)
          *   5-way: arrows, enter on tap; right thumb 2 is a plain BSPC so that
          *   holding it repeats, and tapping the 5-way still gives ENTER
-         *   FN + encoder click -> next status-screen page (status, link, keys)
+         *   FN + encoder turn  -> flip the status screen (status, link); while a
+         *   BLE profile is open for pairing the screen shows that instead
          */
         default_layer {
             display-name = "BASE";
@@ -87,11 +101,11 @@
             bindings = <
 &none     &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4                           &trans                        &bt BT_CLR  &out OUT_USB  &out OUT_BLE  &sys_reset  &bootloader  &none
 &none     &rgb_ug RGB_TOG  &rgb_ug RGB_EFF  &rgb_ug RGB_BRI  &rgb_ug RGB_BRD  &rgb_ug RGB_HUI     &trans  &trans  &trans                &rgb_ug RGB_HUD  &rgb_ug RGB_SPI  &rgb_ug RGB_SPD  &soft_off  &trans  &none
-&none     &kp C_PREV    &kp C_PP      &kp C_NEXT    &kp C_MUTE    &trans                    &display_next  &trans                &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &none
+&none     &kp C_PREV    &kp C_PP      &kp C_NEXT    &kp C_MUTE    &trans                    &trans         &trans                &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &none
                                      &trans  &trans  &trans                                     &trans  &trans  &trans
             >;
 
-            sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;
+            sensor-bindings = <&page_flip>;
         };
     };
 };

@@ -1,5 +1,5 @@
 /*
- * Beopylar status screen: entry points the rest of the firmware may call.
+ * Shared between the status screen and the behavior that flips its pages.
  *
  * Copyright (c) 2024 The ZMK Contributors
  * SPDX-License-Identifier: MIT
@@ -7,11 +7,7 @@
 
 #pragma once
 
-/**
- * Advance the status screen to its next page.
- *
- * Safe to call from any context: the repaint itself is queued on the display
- * work queue.  On the peripheral half this does nothing, because that screen
- * only ever shows the battery and the link.
- */
-void beopylar_display_next_page(void);
+#include <stdint.h>
+
+/* Move the manual page by `delta` (-1 = previous, +1 = next). */
+void beopylar_display_shift_page(int8_t delta);

@@ -10,6 +10,7 @@ config BEOPYLAR_DISPLAY
 	select LV_USE_CANVAS
 	select LV_FONT_MONTSERRAT_14
 	select LV_FONT_MONTSERRAT_16
+	select LV_FONT_MONTSERRAT_28
 	select LV_FONT_UNSCII_8
 	# The typing-speed readout only exists on the central half, and in this ZMK
 	# revision wpm.c does not link on a peripheral, so only pull it in there.
@@ -19,20 +20,14 @@ config BEOPYLAR_DISPLAY
 	  that is designed in portrait (the panel is mounted vertically on the
 	  eyelash_corne) and rotated into the 160x68 panel buffer at paint time.
 
-	  Central half: battery + charging bolt, active layer, output/profile,
-	  held Alt/Shift, the other half's battery when it is in touch, and WPM.
-	  Peripheral half: battery + charging bolt and the link to the central.
+	  Central half: a status page (battery + charging bolt, active layer,
+	  output/profile, held Alt/Shift, the other half's battery when it is in
+	  touch, WPM) and a link page (BLE profiles, output, peer battery/age).
+	  A third screen takes over while a BLE profile is open for pairing.
+	  Peripheral half: its own battery + charging bolt, the layer and output
+	  the central relays over the split link, and the link state.
 
 	  Requires the shield to select the custom status screen (nice_view
 	  does, via Kconfig.defconfig) and CONFIG_NICE_VIEW_WIDGET_STATUS=n so
 	  the shield's own custom_status_screen.c does not define
 	  zmk_display_status_screen() as well.
-
-config BEOPYLAR_DISPLAY_KEYS
-	bool "Beopylar: KEYS page (character echo)"
-	depends on BEOPYLAR_DISPLAY
-	default y
-	help
-	  Adds a page that shows the character the last few keys typed in the
-	  Beopylar layout.  Useful when learning a layout whose characters do
-	  not match the positions printed on the keycaps.
