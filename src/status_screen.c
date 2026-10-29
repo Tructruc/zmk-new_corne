@@ -52,6 +52,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
+#include <zmk/events/keycode_state_changed.h>
 #include <zmk/events/wpm_state_changed.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE) && !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
@@ -62,6 +63,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 #include <zmk/split/central.h>
 #endif
+
+#include "beopylar_chars.h"
+#include "beopylar_display.h"
 
 LV_IMG_DECLARE(beopylar_bolt);
 
@@ -83,6 +87,22 @@ LV_IMG_DECLARE(beopylar_bolt);
 /* The right half reports its battery on every ZMK battery interval; if nothing
  * arrives for this long it is treated as out of touch. */
 #define PEER_STALE_MS 90000
+
+/* Pages. STATUS is what the screen shows by default; LINK and KEYS are reached
+ * with the &display_next key on FN and wrap back to STATUS. */
+enum beopylar_page {
+    PAGE_STATUS = 0,
+    PAGE_LINK,
+    PAGE_KEYS,
+    PAGE_MANUAL_COUNT,
+};
+
+/* How many keystrokes the KEYS page remembers. */
+#define ECHO_LEN 4
+
+/* sentinels for display_state.peer_age_min */
+#define PEER_AGE_NEVER 0xFF
+#define PEER_AGE_STALE 0xFE
 
 /* The right half of a split board has no keymap state of its own to show. */
 #define BEOPYLAR_PERIPHERAL                                                                        \
@@ -116,9 +136,25 @@ struct display_state {
     uint8_t peer_battery; /* central: last battery level reported by the other half */
     bool peer_heard;
     int64_t peer_ts;
+    uint8_t peer_age_min;        /* minutes since the last peer report, PEER_AGE_* */
+    uint8_t profile_bonded_mask; /* bit i: profile i bonded */
+    uint8_t profile_connected_mask;
 };
 
 static struct display_state shown;
+
+/* What the last paint actually showed, so an unchanged screen is not redrawn:
+ * a repaint of the nice!view is a visible flash. */
+static struct display_state painted;
+static uint8_t painted_page = 0xFF;
+
+/* See enum beopylar_page. */
+static uint8_t manual_page = PAGE_STATUS;
+
+/* Last keystrokes, newest first, with the modifiers that were held. */
+static char echo_chars[ECHO_LEN][8];
+static uint8_t echo_mods[ECHO_LEN];
+static uint8_t echo_count;
 
 /* ------------------------------------------------------------------------- */
 /* Drawing primitives                                                        */
@@ -267,7 +303,7 @@ static void render_central(void) {
     draw_mod_chip(36, 96, 30, 20, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
 
     /* The other half: lit dot once it has reported in recently. */
-    bool peer = shown.peer_heard && (k_uptime_get() - shown.peer_ts) < PEER_STALE_MS;
+    bool peer = shown.peer_age_min != PEER_AGE_NEVER && shown.peer_age_min != PEER_AGE_STALE;
     draw_dot(8, 128, 4, peer);
     if (peer && shown.peer_battery > 0) {
         snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
@@ -282,6 +318,112 @@ static void render_central(void) {
     draw_text(text, 34, 138, 32, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
 #endif
 }
+
+/* LINK page: the five BLE profiles, the output in use and what the other half
+ * last reported. */
+static void render_link(void) {
+    char text[24];
+
+    lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
+
+    draw_text("LINK", 2, 3, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    for (uint8_t i = 0; i < 5; i++) {
+        int32_t cx = 10 + (int32_t)i * 12;
+        if (shown.profile_connected_mask & (uint8_t)BIT(i)) {
+            draw_dot(cx, 22, 4, true);
+        } else if (shown.profile_bonded_mask & (uint8_t)BIT(i)) {
+            draw_dot(cx, 22, 4, false);
+        }
+        if ((uint8_t)(i + 1) == shown.profile) {
+            draw_line(cx - 3, 31, cx + 3, 31, 2, true);
+        }
+    }
+
+    snprintf(text, sizeof(text), "%s  B%u", shown.endpoint_usb ? "USB" : "BLE",
+             (unsigned)shown.profile);
+    draw_text(text, 2, 40, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    draw_line(2, 62, 66, 62, 1, false);
+
+    if (shown.peer_battery > 0 && shown.peer_age_min != PEER_AGE_STALE) {
+        snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
+    } else {
+        snprintf(text, sizeof(text), "R --");
+    }
+    draw_text(text, 2, 68, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    if (shown.peer_age_min == PEER_AGE_NEVER) {
+        snprintf(text, sizeof(text), "waiting");
+    } else if (shown.peer_age_min == PEER_AGE_STALE) {
+        snprintf(text, sizeof(text), "no report");
+    } else if (shown.peer_age_min == 0) {
+        snprintf(text, sizeof(text), "just now");
+    } else {
+        snprintf(text, sizeof(text), "%u min ago", (unsigned)shown.peer_age_min);
+    }
+    draw_text(text, 2, 90, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
+             (unsigned)PAGE_MANUAL_COUNT);
+    draw_text(text, 2, 144, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+}
+
+#if IS_ENABLED(CONFIG_BEOPYLAR_DISPLAY_KEYS)
+
+/* KEYS page: the character each key types in the Beopylar layout, so a custom
+ * OS layout can be checked against what the fingers expect. */
+static void render_keys(void) {
+    char text[24];
+
+    lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
+
+    draw_text("KEYS", 2, 3, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    if (echo_count == 0) {
+        draw_text("press", 2, 58, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        draw_text("a key", 2, 78, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        return;
+    }
+
+    fill_rect(6, 20, 56, 34, FG_COLOR, 5);
+    draw_text(echo_chars[0], 6, 26, 56, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    uint8_t mods = echo_mods[0];
+    bool alt = (mods & (MOD_LALT | MOD_RALT)) != 0;
+    bool sft = (mods & (MOD_LSFT | MOD_RSFT)) != 0;
+    if (alt && sft) {
+        snprintf(text, sizeof(text), "SFT+ALT");
+    } else if (alt) {
+        snprintf(text, sizeof(text), "ALT");
+    } else if (sft) {
+        snprintf(text, sizeof(text), "SFT");
+    } else {
+        snprintf(text, sizeof(text), "----");
+    }
+    draw_text(text, 2, 58, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    draw_line(2, 76, 66, 76, 1, false);
+
+    /* The three before it, newest first. */
+    text[0] = '\0';
+    for (int i = 1; i < ECHO_LEN; i++) {
+        if (i >= echo_count) {
+            continue;
+        }
+        if (text[0] != '\0') {
+            strncat(text, " ", sizeof(text) - strlen(text) - 1);
+        }
+        strncat(text, echo_chars[i], sizeof(text) - strlen(text) - 1);
+    }
+    draw_text(text, 2, 86, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
+             (unsigned)PAGE_MANUAL_COUNT);
+    draw_text(text, 2, 144, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+}
+
+#endif /* IS_ENABLED(CONFIG_BEOPYLAR_DISPLAY_KEYS) */
 
 #endif /* !BEOPYLAR_PERIPHERAL */
 
@@ -319,18 +461,47 @@ static void render_peripheral(void) {
 
 #endif /* BEOPYLAR_PERIPHERAL */
 
+#if !BEOPYLAR_PERIPHERAL
+static void render_central(void);
+static void render_link(void);
+#if IS_ENABLED(CONFIG_BEOPYLAR_DISPLAY_KEYS)
+static void render_keys(void);
+#endif
+#endif
+
 static void render(void) {
     if (canvas == NULL || panel == NULL) {
+        return;
+    }
+
+    if (manual_page == painted_page && memcmp(&shown, &painted, sizeof(shown)) == 0) {
         return;
     }
 
 #if BEOPYLAR_PERIPHERAL
     render_peripheral();
 #else
-    render_central();
+    switch (manual_page) {
+    case PAGE_LINK:
+        render_link();
+        break;
+    case PAGE_KEYS:
+#if IS_ENABLED(CONFIG_BEOPYLAR_DISPLAY_KEYS)
+        render_keys();
+#else
+        render_central();
+#endif
+        break;
+    default:
+        render_central();
+        break;
+    }
 #endif
 
     present();
+
+    painted = shown;
+    painted_page = manual_page;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -388,20 +559,35 @@ struct output_ui_state {
     struct zmk_endpoint_instance endpoint;
     uint8_t profile;
     bool bonded;
+    uint8_t bonded_mask;
+    uint8_t connected_mask;
 };
 
 static struct output_ui_state output_ui_get_state(const zmk_event_t *eh) {
-    return (struct output_ui_state){
+    struct output_ui_state state = {
         .endpoint = zmk_endpoints_selected(),
         .profile = (uint8_t)(zmk_ble_active_profile_index() + 1),
         .bonded = !zmk_ble_active_profile_is_open(),
     };
+
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!zmk_ble_profile_is_open(i)) {
+            state.bonded_mask |= (uint8_t)BIT(i);
+        }
+        if (zmk_ble_profile_is_connected(i)) {
+            state.connected_mask |= (uint8_t)BIT(i);
+        }
+    }
+
+    return state;
 }
 
 static void output_ui_update_cb(struct output_ui_state state) {
     shown.endpoint_usb = state.endpoint.transport == ZMK_TRANSPORT_USB;
     shown.profile = state.profile;
     shown.profile_bonded = state.bonded;
+    shown.profile_bonded_mask = state.bonded_mask;
+    shown.profile_connected_mask = state.connected_mask;
     render();
 }
 
@@ -435,6 +621,64 @@ ZMK_DISPLAY_WIDGET_LISTENER(layer_ui, struct layer_ui_state, layer_ui_update_cb,
 
 ZMK_SUBSCRIPTION(layer_ui, zmk_layer_state_changed);
 
+#if IS_ENABLED(CONFIG_BEOPYLAR_DISPLAY_KEYS)
+
+/* What a key types, resolved through the Beopylar table: ZMK knows the position
+ * a key sends, and the table knows which character the OS layout puts there. */
+struct keys_ui_state {
+    char text[8];
+    uint8_t mods;
+    bool pressed;
+};
+
+static struct keys_ui_state keys_ui_get_state(const zmk_event_t *eh) {
+    struct keys_ui_state state = {0};
+    const struct zmk_keycode_state_changed *ev = as_zmk_keycode_state_changed(eh);
+
+    if (ev == NULL || !ev->state) {
+        return state;
+    }
+
+    const struct beopylar_char *c = beopylar_lookup(ev->usage_page, ev->keycode);
+    if (c == NULL) {
+        return state;
+    }
+
+    uint8_t mods = ev->explicit_modifiers | ev->implicit_modifiers;
+    const char *text = (mods & (MOD_LALT | MOD_RALT)) != 0    ? c->altgr
+                       : (mods & (MOD_LSFT | MOD_RSFT)) != 0 ? c->shift
+                                                             : c->plain;
+
+    strncpy(state.text, text, sizeof(state.text) - 1);
+    state.mods = mods;
+    state.pressed = true;
+    return state;
+}
+
+static void keys_ui_update_cb(struct keys_ui_state state) {
+    if (!state.pressed) {
+        return;
+    }
+
+    memmove(echo_chars[1], echo_chars[0], (ECHO_LEN - 1) * sizeof(echo_chars[0]));
+    memmove(echo_mods + 1, echo_mods, (ECHO_LEN - 1) * sizeof(echo_mods[0]));
+    strncpy(echo_chars[0], state.text, sizeof(echo_chars[0]) - 1);
+    echo_chars[0][sizeof(echo_chars[0]) - 1] = '\0';
+    echo_mods[0] = state.mods;
+    if (echo_count < ECHO_LEN) {
+        echo_count++;
+    }
+
+    render();
+}
+
+ZMK_DISPLAY_WIDGET_LISTENER(keys_ui, struct keys_ui_state, keys_ui_update_cb, keys_ui_get_state)
+
+ZMK_SUBSCRIPTION(keys_ui, zmk_keycode_state_changed);
+
+#endif /* IS_ENABLED(CONFIG_BEOPYLAR_DISPLAY_KEYS) */
+
+
 /* ZMK never raises zmk_modifiers_state_changed (see behavior_hold_tap.c), so the
  * modifier state is sampled instead of subscribed to.  The sample runs on the
  * system work queue and only hands a repaint to the display queue when
@@ -446,6 +690,15 @@ static void render_work_handler(struct k_work *work) { render(); }
 
 static K_WORK_DEFINE(render_work, render_work_handler);
 
+void beopylar_display_next_page(void) {
+    if (canvas == NULL) {
+        return;
+    }
+
+    manual_page = (uint8_t)((manual_page + 1) % PAGE_MANUAL_COUNT);
+    k_work_submit_to_queue(zmk_display_work_q(), &render_work);
+}
+
 static void mod_poll_handler(struct k_work *work) {
     bool dirty = false;
 
@@ -455,8 +708,15 @@ static void mod_poll_handler(struct k_work *work) {
         dirty = true;
     }
 
-    if (shown.peer_heard && (k_uptime_get() - shown.peer_ts) >= PEER_STALE_MS) {
-        shown.peer_heard = false;
+    /* Age of the last report from the other half, in whole minutes. Only a
+     * change of bucket repaints, so the screen does not flash every second. */
+    uint8_t age = PEER_AGE_NEVER;
+    if (shown.peer_heard) {
+        int64_t ms = k_uptime_get() - shown.peer_ts;
+        age = (ms >= PEER_STALE_MS) ? PEER_AGE_STALE : (uint8_t)(ms / 60000);
+    }
+    if (age != shown.peer_age_min) {
+        shown.peer_age_min = age;
         dirty = true;
     }
 
@@ -541,6 +801,8 @@ ZMK_DISPLAY_WIDGET_LISTENER(link_ui, struct link_ui_state, link_ui_update_cb, li
 
 ZMK_SUBSCRIPTION(link_ui, zmk_split_peripheral_status_changed);
 
+void beopylar_display_next_page(void) {}
+
 #endif /* BEOPYLAR_PERIPHERAL */
 
 /* ------------------------------------------------------------------------- */
@@ -564,6 +826,7 @@ lv_obj_t *zmk_display_status_screen(void) {
      * Everything but the battery and the USB state is central-only: endpoint,
      * BLE, keymap and modifier lookups do not exist in a peripheral build. */
     shown.battery = zmk_battery_state_of_charge();
+    shown.peer_age_min = PEER_AGE_NEVER;
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
     shown.charging = zmk_usb_is_powered();
 #endif
@@ -572,6 +835,14 @@ lv_obj_t *zmk_display_status_screen(void) {
     shown.endpoint_usb = zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB;
     shown.profile = (uint8_t)(zmk_ble_active_profile_index() + 1);
     shown.profile_bonded = !zmk_ble_active_profile_is_open();
+    for (uint8_t i = 0; i < 5; i++) {
+        if (!zmk_ble_profile_is_open(i)) {
+            shown.profile_bonded_mask |= (uint8_t)BIT(i);
+        }
+        if (zmk_ble_profile_is_connected(i)) {
+            shown.profile_connected_mask |= (uint8_t)BIT(i);
+        }
+    }
 
     zmk_keymap_layer_index_t index = zmk_keymap_highest_layer_active();
     shown.layer_name = zmk_keymap_layer_name(zmk_keymap_layer_index_to_id(index));

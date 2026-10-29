@@ -133,7 +133,7 @@ layers:
   - $$mdi:skip-next$$
   - $$mdi:volume-off$$
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - '&display_next'
   - {t: '$$mdi:transfer$$', type: trans}
   - F1
   - F2

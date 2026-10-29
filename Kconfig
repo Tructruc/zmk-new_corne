@@ -27,3 +27,12 @@ config BEOPYLAR_DISPLAY
 	  does, via Kconfig.defconfig) and CONFIG_NICE_VIEW_WIDGET_STATUS=n so
 	  the shield's own custom_status_screen.c does not define
 	  zmk_display_status_screen() as well.
+
+config BEOPYLAR_DISPLAY_KEYS
+	bool "Beopylar: KEYS page (character echo)"
+	depends on BEOPYLAR_DISPLAY
+	default y
+	help
+	  Adds a page that shows the character the last few keys typed in the
+	  Beopylar layout.  Useful when learning a layout whose characters do
+	  not match the positions printed on the keycaps.
