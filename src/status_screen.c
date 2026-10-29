@@ -67,6 +67,8 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include "beopylar_display.h"
 
+ZMK_EVENT_IMPL(beopylar_mirror_state);
+
 LV_IMG_DECLARE(beopylar_bolt);
 
 /* ------------------------------------------------------------------------- */
@@ -127,7 +129,7 @@ struct display_state {
     bool endpoint_usb;
     uint8_t profile; /* 1-based, as printed next to the output */
     bool profile_bonded;
-    const char *layer_name;
+    char layer_name[12];
     zmk_mod_flags_t mods;
     uint8_t wpm;
     bool link;            /* peripheral: link to the central */
@@ -143,10 +145,9 @@ struct display_state {
 static struct display_state shown;
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT) && !BEOPYLAR_PERIPHERAL
-/* Mirror what the right half cannot look up itself. The payload is the raw
- * event struct, so only pointer-free events may cross the split link. */
-ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(zmk_layer_state_changed, LYR, )
-ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(zmk_endpoint_changed, EPT, )
+/* One mirror event carries everything the right half cannot look up itself:
+ * it has no keymap and no BLE manager, so layer/output state has to be sent. */
+ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(beopylar_mirror_state, MIR, )
 #endif
 
 /* What the last paint actually showed, so an unchanged screen is not redrawn:
@@ -307,9 +308,7 @@ static void render_central(void) {
     draw_line(2, 40, 66, 40, 1, false);
 
     /* Active layer. */
-    const char *layer = (shown.layer_name != NULL && shown.layer_name[0] != '\0')
-                            ? shown.layer_name
-                            : "?";
+    const char *layer = (shown.layer_name[0] != '\0') ? shown.layer_name : "?";
     fill_rect(2, 44, 64, 24, FG_COLOR, 4);
     draw_text(layer, 2, 46, 64, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
 
@@ -419,7 +418,7 @@ static void render_peripheral(void) {
     draw_line(2, 42, 66, 42, 1, false);
 
     /* Mirrored from the central over the split link. */
-    if (shown.layer_name != NULL) {
+    if (shown.layer_name[0] != '\0') {
         fill_rect(2, 46, 64, 22, FG_COLOR, 4);
         draw_text(shown.layer_name, 2, 48, 64, &lv_font_montserrat_16, BG_COLOR,
                   LV_TEXT_ALIGN_CENTER);
@@ -597,7 +596,11 @@ static struct layer_ui_state layer_ui_get_state(const zmk_event_t *eh) {
 }
 
 static void layer_ui_update_cb(struct layer_ui_state state) {
-    shown.layer_name = state.name;
+    if (state.name == NULL) {
+        return;
+    }
+    strncpy(shown.layer_name, state.name, sizeof(shown.layer_name) - 1);
+    shown.layer_name[sizeof(shown.layer_name) - 1] = '\0';
     render();
 }
 
@@ -629,6 +632,27 @@ void beopylar_display_shift_page(int8_t delta) {
     manual_page = (uint8_t)next;
     k_work_submit_to_queue(zmk_display_work_q(), &render_work);
 }
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
+/* Send the right half what changed since the last publish. Cheap enough to ride
+ * on the same 250 ms poll as the rest of the sampled state. */
+static void mirror_publish(void) {
+    static struct beopylar_mirror_state published;
+
+    struct beopylar_mirror_state next = {0};
+    strncpy(next.layer, shown.layer_name, sizeof(next.layer) - 1);
+    next.profile = shown.profile;
+    next.usb = shown.endpoint_usb;
+
+    if (memcmp(&next, &published, sizeof(next)) == 0) {
+        return;
+    }
+    published = next;
+    raise_beopylar_mirror_state(next);
+}
+#else
+static void mirror_publish(void) {}
+#endif
 
 static void mod_poll_handler(struct k_work *work) {
     bool dirty = false;
@@ -663,6 +687,8 @@ static void mod_poll_handler(struct k_work *work) {
     if (dirty) {
         k_work_submit_to_queue(zmk_display_work_q(), &render_work);
     }
+
+    mirror_publish();
 
     k_work_schedule(&mod_poll, K_MSEC(MOD_POLL_MS));
 }
@@ -725,73 +751,42 @@ ZMK_SUBSCRIPTION(wpm_ui, zmk_wpm_state_changed);
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
 /* The central mirrors these over the split link; re-raise them locally so the
  * listeners below can treat them as ordinary ZMK events. */
-ZMK_RELAY_EVENT_HANDLE(zmk_layer_state_changed, LYR, )
-ZMK_RELAY_EVENT_HANDLE(zmk_endpoint_changed, EPT, )
+ZMK_RELAY_EVENT_HANDLE(beopylar_mirror_state, MIR, )
 #endif
 
-/* Peripheral side: the payload of the relayed event is the only source of
- * truth, because the keymap/output state lives on the central. */
-struct layer_ui_state {
-    const char *name;
-};
-
-static struct layer_ui_state layer_ui_get_state(const zmk_event_t *eh) {
-    const struct zmk_layer_state_changed *ev = as_zmk_layer_state_changed(eh);
-
-    if (ev == NULL) {
-        return (struct layer_ui_state){.name = NULL};
-    }
-
-    zmk_keymap_layer_id_t id = zmk_keymap_layer_index_to_id((zmk_keymap_layer_index_t)ev->layer);
-
-    return (struct layer_ui_state){.name = zmk_keymap_layer_name(id)};
-}
-
-static void layer_ui_update_cb(struct layer_ui_state state) {
-    if (state.name == NULL) {
-        return;
-    }
-    shown.layer_name = state.name;
-    render();
-}
-
-ZMK_DISPLAY_WIDGET_LISTENER(layer_ui, struct layer_ui_state, layer_ui_update_cb,
-                            layer_ui_get_state)
-
-ZMK_SUBSCRIPTION(layer_ui, zmk_layer_state_changed);
-
-struct output_ui_state {
-    struct zmk_endpoint_instance endpoint;
+/* Peripheral side: the mirror event is the only source of truth, because the
+ * keymap and the output manager live on the central half. */
+struct mirror_ui_state {
+    struct beopylar_mirror_state mirror;
     bool valid;
 };
 
-static struct output_ui_state output_ui_get_state(const zmk_event_t *eh) {
-    struct output_ui_state state = {0};
-    const struct zmk_endpoint_changed *ev = as_zmk_endpoint_changed(eh);
+static struct mirror_ui_state mirror_ui_get_state(const zmk_event_t *eh) {
+    struct mirror_ui_state state = {0};
+    const struct beopylar_mirror_state *ev = as_beopylar_mirror_state(eh);
 
     if (ev != NULL) {
-        state.endpoint = ev->endpoint;
+        state.mirror = *ev;
         state.valid = true;
     }
     return state;
 }
 
-static void output_ui_update_cb(struct output_ui_state state) {
+static void mirror_ui_update_cb(struct mirror_ui_state state) {
     if (!state.valid) {
         return;
     }
-    shown.endpoint_usb = state.endpoint.transport == ZMK_TRANSPORT_USB;
-    if (state.endpoint.transport == ZMK_TRANSPORT_BLE) {
-        shown.profile = (uint8_t)(state.endpoint.ble.profile_index + 1);
-    }
+    memcpy(shown.layer_name, state.mirror.layer, sizeof(shown.layer_name));
+    shown.layer_name[sizeof(shown.layer_name) - 1] = '\0';
+    shown.profile = state.mirror.profile;
+    shown.endpoint_usb = state.mirror.usb;
     render();
 }
 
-ZMK_DISPLAY_WIDGET_LISTENER(output_ui, struct output_ui_state, output_ui_update_cb,
-                            output_ui_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(mirror_ui, struct mirror_ui_state, mirror_ui_update_cb,
+                            mirror_ui_get_state)
 
-ZMK_SUBSCRIPTION(output_ui, zmk_endpoint_changed);
-
+ZMK_SUBSCRIPTION(mirror_ui, beopylar_mirror_state);
 
 struct link_ui_state {
     bool link;
@@ -857,7 +852,10 @@ lv_obj_t *zmk_display_status_screen(void) {
     }
 
     zmk_keymap_layer_index_t index = zmk_keymap_highest_layer_active();
-    shown.layer_name = zmk_keymap_layer_name(zmk_keymap_layer_index_to_id(index));
+    const char *layer_name = zmk_keymap_layer_name(zmk_keymap_layer_index_to_id(index));
+    if (layer_name != NULL) {
+        strncpy(shown.layer_name, layer_name, sizeof(shown.layer_name) - 1);
+    }
     shown.mods = zmk_hid_get_explicit_mods();
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
