@@ -16,7 +16,7 @@
 #define LV_ATTRIBUTE_IMG_BOLT
 #endif
 
-const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST LV_ATTRIBUTE_IMG_BOLT uint8_t bolt_map[] = {
+const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST LV_ATTRIBUTE_IMG_BOLT uint8_t beopylar_bolt_map[] = {
 #if CONFIG_NICE_VIEW_WIDGET_INVERTED
     0x00, 0x00, 0x00, 0x00, /*Color of index 0*/
     0x00, 0x00, 0x00, 0xff, /*Color of index 1*/
@@ -35,12 +35,12 @@ const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST LV_ATTRIBUTE_IMG_BOLT uint
     0x00, 0x69, 0x00, 0x00, 0x64, 0x00, 0x00, 0x64, 0x00, 0x00, 0x50, 0x00,
 };
 
-const lv_img_dsc_t bolt = {
+const lv_img_dsc_t beopylar_bolt = {
     .header.cf = LV_IMG_CF_INDEXED_2BIT,
     .header.always_zero = 0,
     .header.reserved = 0,
     .header.w = 11,
     .header.h = 18,
     .data_size = 70,
-    .data = bolt_map,
+    .data = beopylar_bolt_map,
 };

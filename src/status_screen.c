@@ -63,7 +63,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/split/central.h>
 #endif
 
-LV_IMG_DECLARE(bolt);
+LV_IMG_DECLARE(beopylar_bolt);
 
 /* ------------------------------------------------------------------------- */
 /* Layout                                                                    */
@@ -192,7 +192,7 @@ static void draw_battery(int32_t x, int32_t y, int32_t w, int32_t h, uint8_t lev
 static void draw_bolt(int32_t x, int32_t y) {
     lv_draw_img_dsc_t img_dsc;
     lv_draw_img_dsc_init(&img_dsc);
-    lv_canvas_draw_img(canvas, x, y, &bolt, &img_dsc);
+    lv_canvas_draw_img(canvas, x, y, &beopylar_bolt, &img_dsc);
 }
 
 #if !BEOPYLAR_PERIPHERAL
@@ -433,7 +433,16 @@ ZMK_DISPLAY_WIDGET_LISTENER(layer_ui, struct layer_ui_state, layer_ui_update_cb,
 ZMK_SUBSCRIPTION(layer_ui, zmk_layer_state_changed);
 
 /* ZMK never raises zmk_modifiers_state_changed (see behavior_hold_tap.c), so the
- * modifier state is sampled instead of subscribed to. */
+ * modifier state is sampled instead of subscribed to.  The sample runs on the
+ * system work queue and only hands a repaint to the display queue when
+ * something actually changed. */
+static void mod_poll_handler(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(mod_poll, mod_poll_handler);
+
+static void render_work_handler(struct k_work *work) { render(); }
+
+static K_WORK_DEFINE(render_work, render_work_handler);
+
 static void mod_poll_handler(struct k_work *work) {
     bool dirty = false;
 
@@ -449,13 +458,11 @@ static void mod_poll_handler(struct k_work *work) {
     }
 
     if (dirty) {
-        render();
+        k_work_submit_to_queue(zmk_display_work_q(), &render_work);
     }
 
-    k_work_reschedule_for(zmk_display_work_q(), &mod_poll, K_MSEC(MOD_POLL_MS));
+    k_work_schedule(&mod_poll, K_MSEC(MOD_POLL_MS));
 }
-
-static K_WORK_DELAYABLE_DEFINE(mod_poll, mod_poll_handler);
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 
@@ -602,7 +609,7 @@ lv_obj_t *zmk_display_status_screen(void) {
     render();
 
 #if !BEOPYLAR_PERIPHERAL
-    k_work_reschedule_for(zmk_display_work_q(), &mod_poll, K_MSEC(MOD_POLL_MS));
+    k_work_schedule(&mod_poll, K_MSEC(MOD_POLL_MS));
 #endif
 
     return screen;
