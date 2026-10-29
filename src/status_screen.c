@@ -145,8 +145,8 @@ static struct display_state shown;
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT) && !BEOPYLAR_PERIPHERAL
 /* Mirror what the right half cannot look up itself. The payload is the raw
  * event struct, so only pointer-free events may cross the split link. */
-ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(zmk_layer_state_changed, LAY, )
-ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(zmk_endpoint_changed, OUT, )
+ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(zmk_layer_state_changed, LYR, )
+ZMK_RELAY_EVENT_CENTRAL_TO_PERIPHERAL(zmk_endpoint_changed, EPT, )
 #endif
 
 /* What the last paint actually showed, so an unchanged screen is not redrawn:
@@ -284,8 +284,10 @@ static void render_pairing(void) {
     draw_line(2, 88, 66, 88, 1, false);
 
     draw_text("open for", 2, 94, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-    draw_text("Bluetooth", 2, 108, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-    draw_text("on your Mac", 2, 126, 64, &lv_font_montserrat_14, FG_COLOR,
+    /* "Bluetooth" is the widest string on the panel, so it gets the full width. */
+    draw_text("Bluetooth", 0, 108, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
+              LV_TEXT_ALIGN_CENTER);
+    draw_text("in macOS", 0, 128, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
               LV_TEXT_ALIGN_CENTER);
 }
 
@@ -723,8 +725,8 @@ ZMK_SUBSCRIPTION(wpm_ui, zmk_wpm_state_changed);
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
 /* The central mirrors these over the split link; re-raise them locally so the
  * listeners below can treat them as ordinary ZMK events. */
-ZMK_RELAY_EVENT_HANDLE(zmk_layer_state_changed, LAY, )
-ZMK_RELAY_EVENT_HANDLE(zmk_endpoint_changed, OUT, )
+ZMK_RELAY_EVENT_HANDLE(zmk_layer_state_changed, LYR, )
+ZMK_RELAY_EVENT_HANDLE(zmk_endpoint_changed, EPT, )
 #endif
 
 /* Peripheral side: the payload of the relayed event is the only source of
