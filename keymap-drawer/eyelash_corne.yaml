@@ -7,7 +7,7 @@ layers:
   - E
   - R
   - T
-  - $$mdi:arrow-up-bold$$
+  - ↑
   - Y
   - U
   - I
@@ -20,9 +20,9 @@ layers:
   - D
   - F
   - G
-  - $$mdi:arrow-left-bold$$
-  - {t: '$$mdi:keyboard-return$$', type: enter}
-  - $$mdi:arrow-right-bold$$
+  - ←
+  - {t: ENTER, type: enter}
+  - →
   - H
   - J
   - K
@@ -36,16 +36,16 @@ layers:
   - V
   - B
   - MUTE
-  - $$mdi:arrow-down-bold$$
+  - ↓
   - N
   - M
   - {t: ',', s: <}
   - {t: ., s: '>'}
   - {t: /, s: '?'}
   - {t: NONE, type: none}
-  - {t: '$$mdi:keyboard-esc$$', h: NUM}
+  - {t: ESC, h: NUM}
   - {t: TAB, h: SFT}
-  - {t: '$$mdi:keyboard-return$$', h: FN}
+  - {t: ENTER, h: FN}
   - {t: SPC, h: CTL}
   - {t: BSPC, type: backspace}
   - ALT

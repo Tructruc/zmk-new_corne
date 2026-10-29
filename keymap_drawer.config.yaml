@@ -418,26 +418,26 @@ parse_config:
     LS(LC(LALT)): $$mdi:star-three-points$$
 
     # Arrows
-    UP: $$mdi:arrow-up-bold$$
+    UP: '↑'
     UP_ARROW: $$mdi:arrow-up-bold$$
-    DOWN: $$mdi:arrow-down-bold$$
+    DOWN: '↓'
     DOWN_ARROW: $$mdi:arrow-down-bold$$
     LEFT_ARROW: $$mdi:arrow-left-bold$$
-    LEFT: $$mdi:arrow-left-bold$$
-    RIGHT: $$mdi:arrow-right-bold$$
+    LEFT: '←'
+    RIGHT: '→'
     RIGHT_ARROW: $$mdi:arrow-right-bold$$
 
     # Whitespace
     ENTER:
       type: enter
-      tap: $$mdi:keyboard-return$$
+      tap: ENTER
     RET:
       type: enter
-      tap: $$mdi:keyboard-return$$
-    ESC: $$mdi:keyboard-esc$$
-    ESCAPE: $$mdi:keyboard-esc$$
+      tap: ENTER
+    ESC: ESC
+    ESCAPE: ESC
     TAB: TAB
-    LS(TAB): $$mdi:keyboard-tab-reverse$$
+    LS(TAB): 'SFT TAB'
     SPACE: SPC
     BACKSPACE:
       type: backspace
@@ -449,8 +449,8 @@ parse_config:
     DEL: $$mdi:backspace-reverse-outline$$
 
     # Locks
-    CAPSLOCK: $$mdi:apple-keyboard-caps$$
-    CAPS: $$mdi:apple-keyboard-caps$$
+    CAPSLOCK: CAPS
+    CAPS: CAPS
 
     # Sound
     C_MUTE: MUTE
