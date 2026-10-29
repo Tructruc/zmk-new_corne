@@ -361,8 +361,10 @@ static void render_link(void) {
         }
     }
 
-    draw_text(shown.profile_connected ? "connected" : "idle", 2, 38, 64, &lv_font_unscii_8,
-              FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    bool active_connected = shown.profile > 0 &&
+                            (shown.profile_connected_mask & (uint8_t)BIT(shown.profile - 1)) != 0;
+    draw_text(active_connected ? "connected" : "idle", 2, 38, 64, &lv_font_unscii_8, FG_COLOR,
+              LV_TEXT_ALIGN_CENTER);
 
     snprintf(text, sizeof(text), "%s  B%u", shown.endpoint_usb ? "USB" : "BLE",
              (unsigned)shown.profile);
