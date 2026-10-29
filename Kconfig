@@ -10,7 +10,9 @@ config BEOPYLAR_DISPLAY
 	select LV_USE_CANVAS
 	select LV_FONT_MONTSERRAT_16
 	select LV_FONT_UNSCII_8
-	select ZMK_WPM
+	# The typing-speed readout only exists on the central half, and in this ZMK
+	# revision wpm.c does not link on a peripheral, so only pull it in there.
+	select ZMK_WPM if !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
 	help
 	  Replaces the stock nice!view widgets with a single hand-drawn 160x68
 	  canvas: battery, active layer, output/profile, held modifiers and a

@@ -478,8 +478,12 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_canvas_set_buffer(canvas, canvas_buf, SCREEN_W, SCREEN_H, LV_IMG_CF_TRUE_COLOR);
     lv_obj_align(canvas, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    /* Seed the state so the first paint is right before any event arrives. */
+    /* Seed the state so the first paint is right before any event arrives.
+     * Everything but the battery is central-only: endpoint, BLE, keymap and
+     * modifier lookups do not exist in a peripheral build. */
     shown.battery = zmk_battery_state_of_charge();
+
+#if !BEOPYLAR_PERIPHERAL
     shown.usb = zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB;
     shown.profile = (uint8_t)(zmk_ble_active_profile_index() + 1);
     shown.profile_bonded = !zmk_ble_active_profile_is_open();
@@ -492,8 +496,7 @@ lv_obj_t *zmk_display_status_screen(void) {
 #if IS_ENABLED(CONFIG_ZMK_WPM)
     shown.wpm = (uint8_t)zmk_wpm_get_state();
 #endif
-
-#if BEOPYLAR_PERIPHERAL
+#else
     shown.link = zmk_split_bt_peripheral_is_connected();
 #endif
 
