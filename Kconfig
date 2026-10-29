@@ -1,0 +1,23 @@
+# Beopylar status screen (see src/status_screen.c).
+#
+# Loaded as a Zephyr module from this config repo: zephyr/module.yml points both
+# `cmake` and `kconfig` here, so the sources are only compiled when this symbol
+# is enabled.
+
+config BEOPYLAR_DISPLAY
+	bool "Beopylar custom status screen for the nice!view panels"
+	depends on ZMK_DISPLAY
+	select LV_USE_CANVAS
+	select LV_FONT_MONTSERRAT_16
+	select LV_FONT_UNSCII_8
+	select ZMK_WPM
+	help
+	  Replaces the stock nice!view widgets with a single hand-drawn 160x68
+	  canvas: battery, active layer, output/profile, held modifiers and a
+	  WPM history sparkline on the central half, battery and split link
+	  state on the peripheral half.
+
+	  Requires the shield to select the custom status screen (nice_view
+	  does, via Kconfig.defconfig) and CONFIG_NICE_VIEW_WIDGET_STATUS=n so
+	  the shield's own custom_status_screen.c does not define
+	  zmk_display_status_screen() as well.
