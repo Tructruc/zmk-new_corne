@@ -284,11 +284,12 @@ static void render_pairing(void) {
 
     draw_line(2, 88, 66, 88, 1, false);
 
-    draw_text("open for", 2, 94, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-    /* "Bluetooth" is the widest string on the panel, so it gets the full width. */
-    draw_text("Bluetooth", 0, 108, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
+    /* Host agnostic on purpose: ZMK cannot know what you are pairing with, so
+     * the hint only names the place every OS keeps Bluetooth in. */
+    draw_text("open", 2, 94, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text("Bluetooth", 0, 104, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
               LV_TEXT_ALIGN_CENTER);
-    draw_text("in macOS", 0, 128, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
+    draw_text("settings", 0, 124, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
               LV_TEXT_ALIGN_CENTER);
 }
 
