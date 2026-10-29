@@ -213,8 +213,11 @@ static void draw_mod_chip(int32_t x, int32_t y, int32_t w, int32_t h, const char
  * quarter turn counter-clockwise: design (dx, dy) lands at panel (159 - dy, dx). */
 static void present(void) {
     for (int32_t dy = 0; dy < DESIGN_H; dy++) {
+        /* A design row becomes a panel column, so the "row length" of the
+         * panel buffer here is its WIDTH (160), not its height. */
+        int32_t px = PANEL_W - 1 - dy;
         for (int32_t dx = 0; dx < DESIGN_W; dx++) {
-            panel_buf[dx * PANEL_W + (PANEL_H - 1 - dy)] = design_buf[dy * DESIGN_W + dx];
+            panel_buf[dx * PANEL_W + px] = design_buf[dy * DESIGN_W + dx];
         }
     }
     lv_obj_invalidate(panel);
