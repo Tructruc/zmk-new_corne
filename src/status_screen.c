@@ -305,6 +305,7 @@ static void render_pairing(void) {
 
 static void render_central(void) {
     char text[16];
+    char profile[8];
 
     lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
 
@@ -328,16 +329,16 @@ static void render_central(void) {
     fill_rect(2, 44, 64, 24, FG_COLOR, 4);
     draw_text(layer, 2, 46, 64, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    /* Output and profile. */
+    /* Output and profile on one centred line: at 68 px the two separate texts
+     * touched, so "USB" ran into the slot number. */
     stroke_rect(2, 72, 64, 20, 4, 1);
-    draw_text(shown.endpoint_usb ? "USB" : "BLE", 8, 74, 28, &lv_font_montserrat_14, FG_COLOR,
-              LV_TEXT_ALIGN_LEFT);
     if (shown.profile_bonded) {
-        snprintf(text, sizeof(text), "B%u", (unsigned)shown.profile);
+        snprintf(profile, sizeof(profile), "B%u", (unsigned)shown.profile);
     } else {
-        snprintf(text, sizeof(text), "--");
+        snprintf(profile, sizeof(profile), "--");
     }
-    draw_text(text, 36, 74, 26, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_RIGHT);
+    snprintf(text, sizeof(text), "%s %s", shown.endpoint_usb ? "USB" : "BLE", profile);
+    draw_text(text, 2, 75, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
     /* Every modifier, so combinations read at a glance: a chip fills in while
      * that modifier is held. */
