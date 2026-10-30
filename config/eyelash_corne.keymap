@@ -72,11 +72,14 @@
          *
          *   hold left  thumb 1  -> NUM  (tap = ESC; only the thumb holds the
          *                                 layer, so every finger keeps its digit)
-         *   hold left  thumb 3  -> GUI  (tap = ENTER; the main modifier on Linux)
+         *   hold left  thumb 3  -> GUI  (tap = ENTER)
+         *   hold right thumb 3  -> ALT  (AltGr; tap = ENTER, so GUI + ENTER is
+         *                                 left thumb held, right thumb tapped)
          *   both inner thumbs   -> FN   (ENTER/GUI + SPACE/CTRL together;
          *                                 hold for FN, release either to leave)
          *   encoder click       -> MUTE (plain key, no hold action)
          *   the 5-way is only ENTER and the arrows, nothing else.
+         *   the encoder is only volume (turn) and mute (click).
          *   right thumb 2 is a plain BSPC so holding it repeats.
          *   FN + encoder turn  -> flip the status screen (status, link); while a
          *   BLE profile is open for pairing the screen shows that instead
@@ -87,7 +90,7 @@
 &none     &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
 &none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &kp ENTER        &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
 &none     &kp Z    &kp X    &kp C    &kp V    &kp B               &kp C_MUTE         &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
-                                     &lt 1 ESC     &mt LSHFT TAB  &mt LGUI ENTER                          &mt LCTRL SPACE  &kp BSPC   &kp RALT
+                                     &lt 1 ESC     &mt LSHFT TAB  &mt LGUI ENTER                          &mt LCTRL SPACE  &kp BSPC   &mt RALT ENTER
             >;
 
             sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;

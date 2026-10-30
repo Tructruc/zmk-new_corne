@@ -48,7 +48,7 @@ layers:
   - {t: ENTER, h: LGUI}
   - {t: SPC, h: CTL}
   - {t: BSPC, type: backspace}
-  - ALT
+  - {t: ENTER, h: ALT}
   NUM:
   - {t: NONE, type: none}
   - {t: '1', s: '!'}
