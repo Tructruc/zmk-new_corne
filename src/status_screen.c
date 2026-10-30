@@ -37,6 +37,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <lvgl.h>
 
 #include <zmk/battery.h>
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+#include <zmk/battery_history/battery_history.h>
+#endif
 #include <zmk/ble.h>
 #include <zmk/display.h>
 #include <zmk/endpoints.h>
@@ -101,6 +104,7 @@ LV_IMG_DECLARE(beopylar_bolt);
 enum beopylar_page {
     PAGE_STATUS = 0,
     PAGE_LINK,
+    PAGE_POWER,
     PAGE_MANUAL_COUNT,
 };
 
@@ -146,6 +150,7 @@ struct display_state {
     bool peer_heard;
     int64_t peer_ts;
     uint8_t peer_age_min;        /* minutes since the last peer report, PEER_AGE_* */
+    int32_t hist_sig;            /* count + newest entry, so a new point repaints */
     uint8_t profile_bonded_mask; /* bit i: profile i bonded */
     uint8_t profile_connected_mask;
     bool pairing; /* central: a BLE profile is open and waiting for a host */
@@ -271,6 +276,11 @@ static void draw_mod_chip(int32_t x, int32_t y, int32_t w, int32_t h, const char
 
 /* Copy the portrait design into the landscape panel buffer, rotating it a
  * quarter turn counter-clockwise: design (dx, dy) lands at panel (159 - dy, dx). */
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+static int32_t battery_history_signature(void);
+static int32_t battery_hours_left(int32_t *window_min, int32_t *drop_pct);
+#endif
+
 static void present(void) {
     for (int32_t dy = 0; dy < DESIGN_H; dy++) {
         /* A design row becomes a panel column, so the "row length" of the
@@ -432,6 +442,79 @@ static void render_link(void) {
     draw_text(text, 2, 144, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 }
 
+/* POWER page: a percentage says where the battery is, not where it is going. */
+static void render_power(void) {
+    char text[24];
+
+    lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
+
+    if (shown.charging || shown.settling) {
+        draw_battery_unknown(2, 2, 60, 14);
+        if (shown.charging) {
+            draw_bolt(27, 17);
+        }
+    } else {
+        draw_battery(2, 2, 60, 14, shown.battery);
+        snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
+        draw_text(text, 2, 18, 44, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_LEFT);
+    }
+
+    draw_line(2, 40, 66, 40, 1, false);
+    draw_text("HISTORY", 2, 42, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    const int32_t left = 3, right = 65, top = 54, bottom = 108;
+
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+    stroke_rect(left, top, right - left, bottom - top, 2, 1);
+    draw_line(left + 1, (top + bottom) / 2, right - 2, (top + bottom) / 2, 1, false);
+
+    int count = zmk_battery_history_get_count();
+    int columns = right - left - 2;
+    int span = (count < columns) ? count : columns;
+    int32_t prev_x = -1, prev_y = -1;
+    for (int i = 0; i < span; i++) {
+        struct zmk_battery_history_entry entry;
+        if (zmk_battery_history_get_entry(count - span + i, &entry) != 0) {
+            continue;
+        }
+        int32_t level = (entry.battery_level > 100) ? 100 : entry.battery_level;
+        int32_t x = left + 1 + i;
+        int32_t y = bottom - 1 - (level * (bottom - top - 2)) / 100;
+        if (prev_x >= 0) {
+            draw_line(prev_x, prev_y, x, y, 1, false);
+        }
+        prev_x = x;
+        prev_y = y;
+    }
+
+    int32_t window_min = 0, drop = 0;
+    int32_t hours = battery_hours_left(&window_min, &drop);
+    if (hours >= 0) {
+        if (hours >= 48) {
+            snprintf(text, sizeof(text), "~%u d left", (unsigned)(hours / 24));
+        } else {
+            snprintf(text, sizeof(text), "~%u h left", (unsigned)hours);
+        }
+        draw_text(text, 2, 112, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        snprintf(text, sizeof(text), "-%u%% in %uh", (unsigned)drop,
+                 (unsigned)((window_min + 30) / 60));
+        draw_text(text, 2, 128, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    } else if (count >= 2) {
+        draw_text("steady", 2, 112, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    } else {
+        draw_text("no trend yet", 2, 112, 64, &lv_font_montserrat_12, FG_COLOR,
+                  LV_TEXT_ALIGN_CENTER);
+    }
+#else
+    draw_text("history", 2, 60, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text("disabled", 2, 76, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+#endif
+
+    snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
+             (unsigned)PAGE_MANUAL_COUNT);
+    draw_text(text, 2, 148, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+}
+
 #endif /* !BEOPYLAR_PERIPHERAL */
 
 /* ------------------------------------------------------------------------- */
@@ -493,7 +576,63 @@ static void render_peripheral(void) {
 #if !BEOPYLAR_PERIPHERAL
 static void render_central(void);
 static void render_link(void);
+static void render_power(void);
 static void render_pairing(void);
+
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+/* Enough of the newest entry to notice a new one, without comparing the whole
+ * buffer on every poll. */
+static int32_t battery_history_signature(void) {
+    int count = zmk_battery_history_get_count();
+    struct zmk_battery_history_entry newest;
+    if (count <= 0 || zmk_battery_history_get_entry(count - 1, &newest) != 0) {
+        return 0;
+    }
+    return ((int32_t)count << 16) | ((int32_t)newest.battery_level << 8) |
+           (int32_t)(newest.timestamp & 0xFF);
+}
+
+/* Hours left according to the drain the history actually saw. Returns -1 when
+ * there is not enough evidence, so the page says nothing instead of guessing. */
+static int32_t battery_hours_left(int32_t *window_min, int32_t *drop_pct) {
+    int count = zmk_battery_history_get_count();
+    struct zmk_battery_history_entry newest;
+
+    *window_min = 0;
+    *drop_pct = 0;
+    if (count < 2 || zmk_battery_history_get_entry(count - 1, &newest) != 0) {
+        return -1;
+    }
+
+    struct zmk_battery_history_entry oldest = newest;
+    for (int i = count - 2; i >= 0; i--) {
+        struct zmk_battery_history_entry entry;
+        if (zmk_battery_history_get_entry(i, &entry) != 0) {
+            break;
+        }
+        /* The stored stamp is seconds since boot in 16 bits, so a wrapped
+         * difference is still the true span below ~18 h. */
+        uint16_t span = (uint16_t)(newest.timestamp - entry.timestamp);
+        if (span > 12 * 3600) {
+            break;
+        }
+        oldest = entry;
+        if (span >= 1800) {
+            break;
+        }
+    }
+
+    uint16_t span = (uint16_t)(newest.timestamp - oldest.timestamp);
+    if (span < 1800 || oldest.battery_level <= newest.battery_level) {
+        return -1;
+    }
+
+    int32_t drop = (int32_t)oldest.battery_level - (int32_t)newest.battery_level;
+    *window_min = span / 60;
+    *drop_pct = drop;
+    return ((int32_t)newest.battery_level * (int32_t)span) / (3600 * drop);
+}
+#endif
 #endif
 
 static void render(void) {
@@ -516,6 +655,9 @@ static void render(void) {
         switch (manual_page) {
         case PAGE_LINK:
             render_link();
+            break;
+        case PAGE_POWER:
+            render_power();
             break;
         default:
             render_central();
@@ -741,6 +883,14 @@ static void mod_poll_handler(struct k_work *work) {
     bool pairing = zmk_ble_active_profile_is_open();
     if (pairing != shown.pairing) {
         shown.pairing = pairing;
+        dirty = true;
+    }
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+    int32_t hist_sig = battery_history_signature();
+    if (hist_sig != shown.hist_sig) {
+        shown.hist_sig = hist_sig;
         dirty = true;
     }
 #endif

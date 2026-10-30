@@ -55,7 +55,7 @@ static void save_work_handler(struct k_work *work) {
     }
 
     char key[16];
-    snprintf(key, sizeof(key), "bh/%d", (int)save_slot);
+    snprintf(key, sizeof(key), "bph/%d", (int)save_slot);
     settings_save_one(key, names[save_slot - 1], strlen(names[save_slot - 1]) + 1);
 }
 
@@ -150,8 +150,8 @@ BT_CONN_CB_DEFINE(beopylar_host_conn) = {
 };
 
 static int host_settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
-    if (strncmp(name, "bh/", 3) == 0) {
-        name += 3;
+    if (strncmp(name, "bph/", 4) == 0) {
+        name += 4;
     }
     if (name[0] < '1' || name[0] > '0' + HOST_SLOTS) {
         return -ENOENT;
@@ -168,7 +168,8 @@ static int host_settings_set(const char *name, size_t len, settings_read_cb read
     return 0;
 }
 
-SETTINGS_STATIC_HANDLER_DEFINE(beopylar_hosts, "bh", NULL, host_settings_set, NULL, NULL);
+/* Its own tree: "bh" belongs to zmk-module-battery-history. */
+SETTINGS_STATIC_HANDLER_DEFINE(beopylar_hosts, "bph", NULL, host_settings_set, NULL, NULL);
 
 static int host_names_init(void) {
     k_work_init_delayable(&read_work, read_work_handler);
