@@ -90,6 +90,10 @@ LV_IMG_DECLARE(beopylar_bolt);
 /* The right half reports its battery on every ZMK battery interval; if nothing
  * arrives for this long it is treated as out of touch. */
 #define PEER_STALE_MS 90000
+/* After the lead is pulled the cell still reads high for a while (surface
+ * charge), so keep drawing the unknown battery until this has passed
+ * instead of printing a number nobody should trust. */
+#define BATTERY_SETTLE_MS 60000
 
 /* Pages. STATUS is what the screen shows by default; LINK and KEYS are reached
  * with the &display_next key on FN and wrap back to STATUS. */
@@ -127,6 +131,8 @@ static lv_color_t panel_buf[PANEL_W * PANEL_H];
 struct display_state {
     uint8_t battery;
     bool charging;
+    bool settling;
+    int64_t settle_ts;
     bool endpoint_usb;
     uint8_t profile; /* 1-based, as printed next to the output */
     bool profile_bonded;
@@ -304,9 +310,11 @@ static void render_central(void) {
 
     /* While the lead is in, the ADC measures the charging voltage and reports
      * 100 %, so show the only thing actually known: that it is charging. */
-    if (shown.charging) {
+    if (shown.charging || shown.settling) {
         draw_battery_unknown(2, 2, 60, 14);
-        draw_bolt(27, 17);
+        if (shown.charging) {
+            draw_bolt(27, 17);
+        }
     } else {
         draw_battery(2, 2, 60, 14, shown.battery);
         snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
@@ -429,9 +437,11 @@ static void render_peripheral(void) {
     lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
 
     /* Its own power state: same lie while charging, same honest answer. */
-    if (shown.charging) {
+    if (shown.charging || shown.settling) {
         draw_battery_unknown(2, 3, 60, 14);
-        draw_bolt(27, 18);
+        if (shown.charging) {
+            draw_bolt(27, 18);
+        }
     } else {
         draw_battery(2, 3, 60, 14, shown.battery);
         snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
@@ -550,6 +560,11 @@ static struct usb_ui_state usb_ui_get_state(const zmk_event_t *eh) {
 }
 
 static void usb_ui_update_cb(struct usb_ui_state state) {
+    if (shown.charging && !state.powered) {
+        /* Just unplugged: the reading was the charger's, not the cell's. */
+        shown.settling = true;
+        shown.settle_ts = k_uptime_get() + BATTERY_SETTLE_MS;
+    }
     shown.charging = state.powered;
     render();
 }
@@ -678,6 +693,10 @@ static void mirror_publish(void) {}
 #endif
 
 static void mod_poll_handler(struct k_work *work) {
+    if (shown.settling && k_uptime_get() > shown.settle_ts) {
+        shown.settling = false;
+        shown.settle_ts = 0;
+    }
     bool dirty = false;
 
     zmk_mod_flags_t mods = zmk_hid_get_explicit_mods();
