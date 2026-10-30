@@ -62,6 +62,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/split/central.h>
 #endif
 
+#if IS_ENABLED(CONFIG_BEOPYLAR_HOST_NAMES)
+#include "host_names.h"
+#endif
+
 #include "beopylar_display.h"
 
 ZMK_EVENT_IMPL(beopylar_mirror_state);
@@ -127,6 +131,7 @@ struct display_state {
     uint8_t profile; /* 1-based, as printed next to the output */
     bool profile_bonded;
     char layer_name[12];
+    char host[16];
     zmk_mod_flags_t mods;
     bool link;            /* peripheral: link to the central */
     uint8_t peer_battery; /* central: last battery level reported by the other half */
@@ -274,19 +279,11 @@ static void render_pairing(void) {
 
     draw_text("PAIRING", 2, 3, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    fill_rect(2, 16, 64, 62, FG_COLOR, 6);
+    /* Just the slot: how to pair is a one-off, the number is what you look for
+     * in a list of devices. */
+    fill_rect(2, 26, 64, 76, FG_COLOR, 6);
     snprintf(text, sizeof(text), "B%u", (unsigned)shown.profile);
-    draw_text(text, 2, 28, 64, &lv_font_montserrat_28, BG_COLOR, LV_TEXT_ALIGN_CENTER);
-
-    draw_line(2, 88, 66, 88, 1, false);
-
-    /* Host agnostic on purpose: ZMK cannot know what you are pairing with, so
-     * the hint only names the place every OS keeps Bluetooth in. */
-    draw_text("open", 2, 94, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-    draw_text("Bluetooth", 0, 104, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
-              LV_TEXT_ALIGN_CENTER);
-    draw_text("settings", 0, 124, DESIGN_W, &lv_font_montserrat_14, FG_COLOR,
-              LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 52, 64, &lv_font_montserrat_28, BG_COLOR, LV_TEXT_ALIGN_CENTER);
 }
 
 static void render_central(void) {
@@ -373,16 +370,23 @@ static void render_link(void) {
 
     snprintf(text, sizeof(text), "%s  B%u", shown.endpoint_usb ? "USB" : "BLE",
              (unsigned)shown.profile);
-    draw_text(text, 2, 52, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 50, 64, &lv_font_montserrat_14, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    draw_line(2, 74, 66, 74, 1, false);
+    /* The host's own name once its GATT read has landed; the slot number above
+     * is the fallback, not the headline. */
+    if (shown.host[0] != '\0') {
+        draw_text(shown.host, 0, 66, DESIGN_W, &lv_font_montserrat_12, FG_COLOR,
+                  LV_TEXT_ALIGN_CENTER);
+    }
+
+    draw_line(2, 82, 66, 82, 1, false);
 
     if (shown.peer_battery > 0 && shown.peer_age_min != PEER_AGE_STALE) {
         snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
     } else {
         snprintf(text, sizeof(text), "R --");
     }
-    draw_text(text, 2, 80, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 88, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
     if (shown.peer_age_min == PEER_AGE_NEVER) {
         snprintf(text, sizeof(text), "waiting");
@@ -393,7 +397,7 @@ static void render_link(void) {
     } else {
         snprintf(text, sizeof(text), "%u min ago", (unsigned)shown.peer_age_min);
     }
-    draw_text(text, 2, 104, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 112, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
     snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
              (unsigned)PAGE_MANUAL_COUNT);
@@ -691,6 +695,15 @@ static void mod_poll_handler(struct k_work *work) {
         shown.peer_age_min = age;
         dirty = true;
     }
+
+#if IS_ENABLED(CONFIG_BEOPYLAR_HOST_NAMES)
+    const char *host = host_name_get(shown.profile);
+    if (strncmp(shown.host, host, sizeof(shown.host) - 1) != 0) {
+        strncpy(shown.host, host, sizeof(shown.host) - 1);
+        shown.host[sizeof(shown.host) - 1] = '\0';
+        dirty = true;
+    }
+#endif
 
     if (dirty) {
         k_work_submit_to_queue(zmk_display_work_q(), &render_work);

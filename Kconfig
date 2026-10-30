@@ -4,6 +4,20 @@
 # `cmake` and `kconfig` here, so the sources are only compiled when this symbol
 # is enabled.
 
+config BEOPYLAR_HOST_NAMES
+	bool "Read the paired host's Bluetooth name"
+	default y
+	depends on BEOPYLAR_DISPLAY
+	depends on BT_CONN
+	depends on !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
+	select BT_GATT_CLIENT
+	help
+	  Ask the host for its Generic Access device name (0x2A00) shortly after
+	  it connects, and keep it per Bluetooth profile so the link page can show
+	  "macbook" instead of "B2".  Read only, best effort, and cosmetic: a host
+	  that refuses leaves the slot number in place.  Only the central half ever
+	  connects to a host, so this is central only.
+
 config BEOPYLAR_DISPLAY
 	bool "Beopylar custom status screen for the nice!view panels"
 	depends on ZMK_DISPLAY

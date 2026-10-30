@@ -35,7 +35,7 @@ layers:
   - C
   - V
   - B
-  - NUM
+  - ESC
   - ↓
   - N
   - M
@@ -43,7 +43,7 @@ layers:
   - {t: ., s: '>'}
   - {t: /, s: '?'}
   - {t: NONE, type: none}
-  - ESC
+  - NUM
   - {t: TAB, h: SFT}
   - {t: ENTER, h: FN}
   - {t: SPC, h: CTL}

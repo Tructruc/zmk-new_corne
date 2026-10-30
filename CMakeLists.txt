@@ -11,6 +11,10 @@ if(CONFIG_BEOPYLAR_DISPLAY)
     src/behavior_display_page.c
   )
 
+  if(CONFIG_BEOPYLAR_HOST_NAMES)
+    zephyr_library_sources(src/host_names.c)
+  endif()
+
   # ZMK keeps its headers in <zmk app>/include, but exposes that path to the app
   # target only (`target_include_directories(app PRIVATE include)` in
   # app/CMakeLists.txt), so a module has to add it itself or `zmk/display.h` and
