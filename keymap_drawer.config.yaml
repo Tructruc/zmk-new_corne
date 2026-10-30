@@ -117,6 +117,37 @@ parse_config:
     type: trans
 
   raw_binding_map:
+    # Beopylar QG host characters, not US HID position labels.
+    "&kp Q": {"tap": "b", "shifted": "B"}
+    "&kp W": {"tap": "1DK", "shifted": "!"}
+    "&kp E": {"tap": "o", "shifted": "O"}
+    "&kp R": {"tap": "p", "shifted": "P"}
+    "&kp T": {"tap": "y", "shifted": "Y"}
+    "&kp Y": {"tap": "-", "shifted": "?"}
+    "&kp U": {"tap": "v", "shifted": "V"}
+    "&kp I": {"tap": "d", "shifted": "D"}
+    "&kp O": {"tap": "l", "shifted": "L"}
+    "&kp P": {"tap": "j", "shifted": "J"}
+    "&kp A": {"tap": "a", "shifted": "A"}
+    "&kp S": {"tap": "u", "shifted": "U"}
+    "&kp D": {"tap": "e", "shifted": "E"}
+    "&kp F": {"tap": "i", "shifted": "I"}
+    "&kp G": {"tap": ",", "shifted": ";"}
+    "&kp H": {"tap": "c", "shifted": "C"}
+    "&kp J": {"tap": "t", "shifted": "T"}
+    "&kp K": {"tap": "s", "shifted": "S"}
+    "&kp L": {"tap": "r", "shifted": "R"}
+    "&kp SEMI": {"tap": "n", "shifted": "N"}
+    "&kp Z": {"tap": "z", "shifted": "Z"}
+    "&kp X": {"tap": "k", "shifted": "K"}
+    "&kp C": {"tap": "x", "shifted": "X"}
+    "&kp V": {"tap": ".", "shifted": ":"}
+    "&kp B": {"tap": "w", "shifted": "W"}
+    "&kp N": {"tap": "m", "shifted": "M"}
+    "&kp M": {"tap": "q", "shifted": "Q"}
+    "&kp COMMA": {"tap": "g", "shifted": "G"}
+    "&kp DOT": {"tap": "h", "shifted": "H"}
+    "&kp FSLH": {"tap": "f", "shifted": "F"}
     # Layers
     "&ltq 1 BACKSPACE":
       tap:  $$mdi:backspace$$

@@ -2,46 +2,46 @@ layout: {zmk_keyboard: eyelash_corne}
 layers:
   BASE:
   - {t: NONE, type: none}
-  - Q
-  - W
-  - E
-  - R
-  - T
+  - {t: b, s: B}
+  - {t: 1DK, s: '!'}
+  - {t: o, s: O}
+  - {t: p, s: P}
+  - {t: y, s: Y}
   - ↑
-  - Y
-  - U
-  - I
-  - O
-  - P
+  - {t: '-', s: '?'}
+  - {t: v, s: V}
+  - {t: d, s: D}
+  - {t: l, s: L}
+  - {t: j, s: J}
   - {t: NONE, type: none}
   - {t: NONE, type: none}
-  - A
-  - S
-  - D
-  - F
-  - G
+  - {t: a, s: A}
+  - {t: u, s: U}
+  - {t: e, s: E}
+  - {t: i, s: I}
+  - {t: ',', s: ;}
   - ←
   - {t: ENTER, type: enter}
   - →
-  - H
-  - J
-  - K
-  - L
-  - {t: ;, s: ':'}
+  - {t: c, s: C}
+  - {t: t, s: T}
+  - {t: s, s: S}
+  - {t: r, s: R}
+  - {t: n, s: N}
   - {t: NONE, type: none}
   - {t: NONE, type: none}
-  - Z
-  - X
-  - C
-  - V
-  - B
-  - {t: MUTE, h: FN}
+  - {t: z, s: Z}
+  - {t: k, s: K}
+  - {t: x, s: X}
+  - {t: ., s: ':'}
+  - {t: w, s: W}
+  - MUTE
   - ↓
-  - N
-  - M
-  - {t: ',', s: <}
-  - {t: ., s: '>'}
-  - {t: /, s: '?'}
+  - {t: m, s: M}
+  - {t: q, s: Q}
+  - {t: g, s: G}
+  - {t: h, s: H}
+  - {t: f, s: F}
   - {t: NONE, type: none}
   - {t: ESC, h: NUM}
   - {t: TAB, h: SFT}
@@ -133,7 +133,7 @@ layers:
   - NEXT
   - MUTE
   - {t: TRANS, type: trans}
-  - {t: MUTE, type: held}
+  - MUTE
   - {t: TRANS, type: trans}
   - F1
   - F2
@@ -143,7 +143,11 @@ layers:
   - {t: NONE, type: none}
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
+  - {type: held}
+  - {type: held}
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
-  - {t: TRANS, type: trans}
+combos:
+- p: [44, 45]
+  k: FN
+  l: [BASE, NUM]
