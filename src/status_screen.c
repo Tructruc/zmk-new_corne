@@ -218,6 +218,17 @@ static void draw_dot(int32_t x, int32_t y, int32_t r, bool filled) {
 #endif
 
 /* Battery body with a terminal nub and the level as a filled bar. */
+/* The ADC is looking at the charger while it is plugged in, so the level is
+ * not known. Draw the shell with a dithered fill: it reads as "unknown"
+ * rather than as a percentage nobody should trust. */
+static void draw_battery_unknown(int32_t x, int32_t y, int32_t w, int32_t h) {
+    stroke_rect(x, y, w, h, 3, 1);
+    fill_rect(x + w + 1, y + h / 2 - 2, 2, 4, FG_COLOR, 0);
+    for (int32_t i = x + 3; i < x + w - 3; i += 3) {
+        fill_rect(i, y + 3, 1, h - 6, FG_COLOR, 0);
+    }
+}
+
 static void draw_battery(int32_t x, int32_t y, int32_t w, int32_t h, uint8_t level) {
     uint8_t clamped = level > 100 ? 100 : level;
 
@@ -294,8 +305,8 @@ static void render_central(void) {
     /* While the lead is in, the ADC measures the charging voltage and reports
      * 100 %, so show the only thing actually known: that it is charging. */
     if (shown.charging) {
-        draw_bolt(27, 1);
-        draw_text("CHG", 2, 20, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        draw_battery_unknown(2, 2, 60, 14);
+        draw_bolt(27, 17);
     } else {
         draw_battery(2, 2, 60, 14, shown.battery);
         snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
@@ -419,8 +430,8 @@ static void render_peripheral(void) {
 
     /* Its own power state: same lie while charging, same honest answer. */
     if (shown.charging) {
-        draw_bolt(27, 2);
-        draw_text("CHG", 2, 22, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        draw_battery_unknown(2, 3, 60, 14);
+        draw_bolt(27, 18);
     } else {
         draw_battery(2, 3, 60, 14, shown.battery);
         snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);

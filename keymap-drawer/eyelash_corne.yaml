@@ -21,7 +21,7 @@ layers:
   - F
   - G
   - ←
-  - {t: ENTER, type: enter}
+  - {t: ENTER, h: LGUI}
   - →
   - H
   - J
@@ -35,7 +35,7 @@ layers:
   - C
   - V
   - B
-  - ESC
+  - MUTE
   - ↓
   - N
   - M
@@ -43,7 +43,7 @@ layers:
   - {t: ., s: '>'}
   - {t: /, s: '?'}
   - {t: NONE, type: none}
-  - NUM
+  - {t: ESC, h: NUM}
   - {t: TAB, h: SFT}
   - {t: ENTER, h: FN}
   - {t: SPC, h: CTL}
@@ -92,7 +92,7 @@ layers:
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
   - {t: NONE, type: none}
-  - {t: TRANS, type: trans}
+  - {type: held}
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
   - {t: TRANS, type: trans}
