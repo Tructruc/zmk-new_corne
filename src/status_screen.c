@@ -69,6 +69,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "beopylar_display.h"
 
 ZMK_EVENT_IMPL(beopylar_mirror_state);
+ZMK_EVENT_IMPL(beopylar_peer_status);
 
 LV_IMG_DECLARE(beopylar_bolt);
 
@@ -141,6 +142,7 @@ struct display_state {
     zmk_mod_flags_t mods;
     bool link;            /* peripheral: link to the central */
     uint8_t peer_battery; /* central: last battery level reported by the other half */
+    bool peer_charging;   /* central: the other half said it is charging */
     bool peer_heard;
     int64_t peer_ts;
     uint8_t peer_age_min;        /* minutes since the last peer report, PEER_AGE_* */
@@ -352,7 +354,9 @@ static void render_central(void) {
     /* The other half: lit dot once it has reported in recently. */
     bool peer = shown.peer_age_min != PEER_AGE_NEVER && shown.peer_age_min != PEER_AGE_STALE;
     draw_dot(9, 150, 4, peer);
-    if (peer && shown.peer_battery > 0) {
+    if (shown.peer_charging) {
+        snprintf(text, sizeof(text), "R chg");
+    } else if (peer && shown.peer_battery > 0) {
         snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
     } else {
         snprintf(text, sizeof(text), "R --");
@@ -401,14 +405,18 @@ static void render_link(void) {
 
     draw_line(2, 82, 66, 82, 1, false);
 
-    if (shown.peer_battery > 0 && shown.peer_age_min != PEER_AGE_STALE) {
+    if (shown.peer_charging) {
+        snprintf(text, sizeof(text), "R chg");
+    } else if (shown.peer_battery > 0 && shown.peer_age_min != PEER_AGE_STALE) {
         snprintf(text, sizeof(text), "R %u%%", (unsigned)shown.peer_battery);
     } else {
         snprintf(text, sizeof(text), "R --");
     }
     draw_text(text, 2, 88, 64, &lv_font_montserrat_16, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    if (shown.peer_age_min == PEER_AGE_NEVER) {
+    if (shown.peer_charging) {
+        snprintf(text, sizeof(text), "charging");
+    } else if (shown.peer_age_min == PEER_AGE_NEVER) {
         snprintf(text, sizeof(text), "waiting");
     } else if (shown.peer_age_min == PEER_AGE_STALE) {
         snprintf(text, sizeof(text), "no report");
@@ -526,6 +534,26 @@ static void render(void) {
 /* State listeners                                                           */
 /* ------------------------------------------------------------------------- */
 
+/* Tell the central about this half's battery on the same relay the layer text
+ * uses. The central prints that verdict verbatim, so an unknown level never
+ * turns into a confident number. */
+static void peer_publish(bool force) {
+    ARG_UNUSED(force);
+#if BEOPYLAR_PERIPHERAL && IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
+    static struct beopylar_peer_status published;
+    struct beopylar_peer_status next = {
+        .battery = shown.battery,
+        .charging = shown.charging,
+        .settling = shown.settling,
+    };
+    if (!force && memcmp(&published, &next, sizeof(next)) == 0) {
+        return;
+    }
+    published = next;
+    raise_beopylar_peer_status(next);
+#endif
+}
+
 struct battery_ui_state {
     uint8_t level;
 };
@@ -541,6 +569,7 @@ static struct battery_ui_state battery_ui_get_state(const zmk_event_t *eh) {
 static void battery_ui_update_cb(struct battery_ui_state state) {
     shown.battery = state.level;
     render();
+    peer_publish(false);
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(battery_ui, struct battery_ui_state, battery_ui_update_cb,
@@ -568,6 +597,7 @@ static void usb_ui_update_cb(struct usb_ui_state state) {
     }
     shown.charging = state.powered;
     render();
+    peer_publish(false);
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(usb_ui, struct usb_ui_state, usb_ui_update_cb, usb_ui_get_state)
@@ -745,6 +775,42 @@ static void mod_poll_handler(struct k_work *work) {
     k_work_schedule(&mod_poll, K_MSEC(MOD_POLL_MS));
 }
 
+#if !BEOPYLAR_PERIPHERAL
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
+ZMK_RELAY_EVENT_HANDLE(beopylar_peer_status, PST, )
+#endif
+
+struct peer_status_ui_state {
+    uint8_t battery;
+    bool charging;
+};
+
+static struct peer_status_ui_state peer_status_ui_get_state(const zmk_event_t *eh) {
+    const struct beopylar_peer_status *ev = as_beopylar_peer_status(eh);
+    if (ev == NULL) {
+        return (struct peer_status_ui_state){0};
+    }
+    return (struct peer_status_ui_state){
+        .battery = ev->battery,
+        .charging = ev->charging || ev->settling,
+    };
+}
+
+static void peer_status_ui_update_cb(struct peer_status_ui_state state) {
+    shown.peer_battery = state.battery;
+    shown.peer_charging = state.charging;
+    shown.peer_heard = true;
+    shown.peer_ts = k_uptime_get();
+    render();
+}
+
+ZMK_DISPLAY_WIDGET_LISTENER(peer_status_ui, struct peer_status_ui_state, peer_status_ui_update_cb,
+                            peer_status_ui_get_state)
+ZMK_SUBSCRIPTION(peer_status_ui, beopylar_peer_status);
+
+#endif /* !BEOPYLAR_PERIPHERAL */
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 
 struct peer_ui_state {
@@ -779,6 +845,10 @@ ZMK_SUBSCRIPTION(peer_ui, zmk_peripheral_battery_state_changed);
 /* The central mirrors these over the split link; re-raise them locally so the
  * listeners below can treat them as ordinary ZMK events. */
 ZMK_RELAY_EVENT_HANDLE(beopylar_mirror_state, MIR, )
+
+/* And send this half's own battery verdict the other way, so the central can
+ * show what this screen shows instead of a number it cannot trust. */
+ZMK_RELAY_EVENT_PERIPHERAL_TO_CENTRAL(beopylar_peer_status, PST, )
 #endif
 
 /* Peripheral side: the mirror event is the only source of truth, because the
@@ -828,6 +898,11 @@ static struct link_ui_state link_ui_get_state(const zmk_event_t *eh) {
 static void link_ui_update_cb(struct link_ui_state state) {
     shown.link = state.link;
     render();
+    if (state.link) {
+        /* The central may have missed the last verdict, e.g. after its own
+         * reset, so repeat it now that there is somewhere to send it. */
+        peer_publish(true);
+    }
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(link_ui, struct link_ui_state, link_ui_update_cb, link_ui_get_state)
@@ -907,6 +982,7 @@ lv_obj_t *zmk_display_status_screen(void) {
 #else
     output_ui_init();
     layer_ui_init();
+    peer_status_ui_init();
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     peer_ui_init();
 #endif
