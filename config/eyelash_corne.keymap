@@ -81,18 +81,20 @@
          *   the 5-way is only ENTER and the arrows, nothing else.
          *   the encoder is only volume (turn) and mute (click).
          *   right thumb 2 is a plain BSPC so holding it repeats.
-         *   left thumb 2 is a plain SHIFT, so SHIFT+TAB works; TAB itself sits
-         *   on the outer top-left key, where a normal keyboard has it.
+         *   TAB is the tap of left thumb 2 and CTRL its hold; SHIFT is the hold
+         *   of right thumb 1 (tap = SPACE). Two different hands, so SHIFT+TAB
+         *   and CTRL+SHIFT both work. Cost: GUI+CTRL and ALTGR+SHIFT now need
+         *   two thumb keys on the same hand, so they do not fire.
          *   FN + encoder turn  -> flip the status screen (status, link); while a
          *   BLE profile is open for pairing the screen shows that instead
          */
         default_layer {
             display-name = "BASE";
             bindings = <
-&kp TAB   &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
+&none     &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
 &none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &kp ENTER        &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
 &none     &kp Z    &kp X    &kp C    &kp V    &kp B               &kp C_MUTE         &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
-                                     &lt 1 ESC     &kp LSHFT      &mt LGUI ENTER                          &mt LCTRL SPACE  &kp BSPC   &mt RALT ENTER
+                                     &lt 1 ESC     &mt LCTRL TAB  &mt LGUI ENTER                          &mt LSHFT SPACE  &kp BSPC   &mt RALT ENTER
             >;
 
             sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;
