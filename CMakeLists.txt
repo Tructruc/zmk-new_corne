@@ -15,6 +15,18 @@ if(CONFIG_BEOPYLAR_DISPLAY)
     zephyr_library_sources(src/host_names.c)
   endif()
 
+  # The SYS page names the firmware that is running. Empty outside a git
+  # checkout (a tarball build), which the page renders as "----".
+  execute_process(COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE BEOPYLAR_GIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  if(BEOPYLAR_GIT_HASH)
+    zephyr_library_compile_definitions(BEOPYLAR_GIT_HASH="${BEOPYLAR_GIT_HASH}")
+  endif()
+
   # ZMK keeps its headers in <zmk app>/include, but exposes that path to the app
   # target only (`target_include_directories(app PRIVATE include)` in
   # app/CMakeLists.txt), so a module has to add it itself or `zmk/display.h` and

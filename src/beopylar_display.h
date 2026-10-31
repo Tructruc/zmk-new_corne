@@ -26,10 +26,14 @@ ZMK_EVENT_DECLARE(beopylar_mirror_state);
 
 /* The peripheral's own verdict on its battery, relayed to the central so page 2
  * shows exactly what the right half shows - and nothing while it charges. */
+#define BEOPYLAR_PEER_HISTORY 24
+
 struct beopylar_peer_status {
     uint8_t battery;
     bool charging;
     bool settling;
+    uint8_t history_count; /* samples in history[], oldest first */
+    uint8_t history[BEOPYLAR_PEER_HISTORY];
 };
 
 ZMK_EVENT_DECLARE(beopylar_peer_status);

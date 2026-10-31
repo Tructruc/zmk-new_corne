@@ -40,6 +40,10 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
 #include <zmk/battery_history/battery_history.h>
 #endif
+#if IS_ENABLED(CONFIG_HWINFO)
+#include <zephyr/drivers/hwinfo.h>
+#endif
+#include <zmk/events/activity_state_changed.h>
 #include <zmk/ble.h>
 #include <zmk/display.h>
 #include <zmk/endpoints.h>
@@ -105,8 +109,12 @@ enum beopylar_page {
     PAGE_STATUS = 0,
     PAGE_LINK,
     PAGE_POWER,
+    PAGE_SYS,
     PAGE_MANUAL_COUNT,
 };
+
+/* Below this the STATUS page gives the screen to a warning. */
+#define LOW_BATTERY_PCT 10
 
 /* How many keystrokes the KEYS page remembers. */
 
@@ -147,6 +155,8 @@ struct display_state {
     bool link;            /* peripheral: link to the central */
     uint8_t peer_battery; /* central: last battery level reported by the other half */
     bool peer_charging;   /* central: the other half said it is charging */
+    uint8_t peer_history_count;                  /* samples the other half sent */
+    uint8_t peer_history[BEOPYLAR_PEER_HISTORY]; /* oldest first */
     bool peer_heard;
     int64_t peer_ts;
     uint8_t peer_age_min;        /* minutes since the last peer report, PEER_AGE_* */
@@ -278,8 +288,9 @@ static void draw_mod_chip(int32_t x, int32_t y, int32_t w, int32_t h, const char
  * quarter turn counter-clockwise: design (dx, dy) lands at panel (159 - dy, dx). */
 #if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
 static int32_t battery_history_signature(void);
-static int32_t battery_hours_left(int32_t *window_min, int32_t *drop_pct);
 #endif
+static int32_t own_hours_left(void);
+static int32_t peer_hours_left(void);
 
 static void present(void) {
     for (int32_t dy = 0; dy < DESIGN_H; dy++) {
@@ -352,12 +363,21 @@ static void render_central(void) {
     snprintf(text, sizeof(text), "%s %s", shown.endpoint_usb ? "USB" : "BLE", profile);
     draw_text(text, 2, 75, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    /* Every modifier, so combinations read at a glance: a chip fills in while
-     * that modifier is held. */
-    draw_mod_chip(2, 96, 30, 20, "CTL", (shown.mods & (MOD_LCTL | MOD_RCTL)) != 0);
-    draw_mod_chip(36, 96, 30, 20, "GUI", (shown.mods & (MOD_LGUI | MOD_RGUI)) != 0);
-    draw_mod_chip(2, 118, 30, 20, "ALT", (shown.mods & (MOD_LALT | MOD_RALT)) != 0);
-    draw_mod_chip(36, 118, 30, 20, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
+    if (shown.battery <= LOW_BATTERY_PCT && !shown.charging && !shown.settling) {
+        /* The screen is the only warning there is, so a low cell takes the
+         * chips over instead of sharing the page with them. */
+        fill_rect(2, 96, 64, 42, FG_COLOR, 4);
+        draw_text("LOW", 2, 98, 64, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
+        snprintf(text, sizeof(text), "%u%%", (unsigned)shown.battery);
+        draw_text(text, 2, 118, 64, &lv_font_montserrat_16, BG_COLOR, LV_TEXT_ALIGN_CENTER);
+    } else {
+        /* Every modifier, so combinations read at a glance: a chip fills in
+         * while that modifier is held. */
+        draw_mod_chip(2, 96, 30, 20, "CTL", (shown.mods & (MOD_LCTL | MOD_RCTL)) != 0);
+        draw_mod_chip(36, 96, 30, 20, "GUI", (shown.mods & (MOD_LGUI | MOD_RGUI)) != 0);
+        draw_mod_chip(2, 118, 30, 20, "ALT", (shown.mods & (MOD_LALT | MOD_RALT)) != 0);
+        draw_mod_chip(36, 118, 30, 20, "SFT", (shown.mods & (MOD_LSFT | MOD_RSFT)) != 0);
+    }
 
     draw_line(2, 142, 66, 142, 1, false);
 
@@ -442,7 +462,8 @@ static void render_link(void) {
     draw_text(text, 2, 144, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 }
 
-/* POWER page: a percentage says where the battery is, not where it is going. */
+/* POWER page: a percentage says where the battery is, not where it is going.
+ * Both halves are plotted, and the estimate follows whichever drains faster. */
 static void render_power(void) {
     char text[24];
 
@@ -460,16 +481,17 @@ static void render_power(void) {
     }
 
     draw_line(2, 40, 66, 40, 1, false);
-    draw_text("HISTORY", 2, 42, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text("POWER", 2, 42, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 
-    const int32_t left = 3, right = 65, top = 54, bottom = 108;
+    const int32_t left = 3, top = 54, right = 65, bottom = 106;
+    const int32_t columns = right - left - 2;
 
-#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
     stroke_rect(left, top, right - left, bottom - top, 2, 1);
     draw_line(left + 1, (top + bottom) / 2, right - 2, (top + bottom) / 2, 1, false);
 
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+    /* This half: a solid curve, newest on the right. */
     int count = zmk_battery_history_get_count();
-    int columns = right - left - 2;
     int span = (count < columns) ? count : columns;
     int32_t prev_x = -1, prev_y = -1;
     for (int i = 0; i < span; i++) {
@@ -486,33 +508,129 @@ static void render_power(void) {
         prev_x = x;
         prev_y = y;
     }
+#endif
 
-    int32_t window_min = 0, drop = 0;
-    int32_t hours = battery_hours_left(&window_min, &drop);
+    /* The other half: the samples it sent, one dot each, so the two curves stay
+     * distinguishable in a single bit per pixel. */
+    if (!shown.peer_charging && shown.peer_history_count > 0) {
+        int pcount = shown.peer_history_count;
+        if (pcount > (int)BEOPYLAR_PEER_HISTORY) {
+            pcount = BEOPYLAR_PEER_HISTORY;
+        }
+        for (int i = 0; i < pcount; i++) {
+            int32_t level = shown.peer_history[i];
+            if (level > 100) {
+                level = 100;
+            }
+            int32_t x = left + 1 + ((columns - 1) * i) / ((pcount > 1) ? (pcount - 1) : 1);
+            int32_t y = bottom - 1 - (level * (bottom - top - 2)) / 100;
+            fill_rect(x, y, 1, 1, FG_COLOR, 0);
+        }
+    }
+
+    /* Both levels on one line, then what they imply. */
+    if (shown.charging || shown.settling) {
+        snprintf(text, sizeof(text), "L --");
+    } else {
+        snprintf(text, sizeof(text), "L %u%%", (unsigned)shown.battery);
+    }
+    size_t used = strlen(text);
+    if (shown.peer_charging || shown.peer_battery == 0) {
+        snprintf(text + used, sizeof(text) - used, "   R --");
+    } else {
+        snprintf(text + used, sizeof(text) - used, "   R %u%%", (unsigned)shown.peer_battery);
+    }
+    draw_text(text, 2, 110, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    int32_t hours = peer_hours_left();
+    if (hours < 0) {
+        hours = own_hours_left();
+    }
     if (hours >= 0) {
         if (hours >= 48) {
             snprintf(text, sizeof(text), "~%u d left", (unsigned)(hours / 24));
         } else {
             snprintf(text, sizeof(text), "~%u h left", (unsigned)hours);
         }
-        draw_text(text, 2, 112, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-        snprintf(text, sizeof(text), "-%u%% in %uh", (unsigned)drop,
-                 (unsigned)((window_min + 30) / 60));
-        draw_text(text, 2, 128, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-    } else if (count >= 2) {
-        draw_text("steady", 2, 112, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+        draw_text(text, 2, 126, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
     } else {
-        draw_text("no trend yet", 2, 112, 64, &lv_font_montserrat_12, FG_COLOR,
-                  LV_TEXT_ALIGN_CENTER);
+        draw_text("no trend yet", 2, 128, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
     }
-#else
-    draw_text("history", 2, 60, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-    draw_text("disabled", 2, 76, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
-#endif
 
     snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
              (unsigned)PAGE_MANUAL_COUNT);
-    draw_text(text, 2, 148, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_text(text, 2, 150, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+}
+
+/* SYS page: which firmware this is, how long it has been up, and why it last
+ * started - the three things you want when something behaves oddly. */
+static void render_sys(void) {
+    char text[24];
+
+    lv_canvas_fill_bg(canvas, BG_COLOR, LV_OPA_COVER);
+    draw_text("SYSTEM", 2, 3, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    /* __DATE__ is "Oct 31 2026", which does not fit 64 px: shorten it, and
+     * leave the seconds off the time. */
+    char month[4] = {0};
+    int day = 0, year = 0;
+    if (sscanf(__DATE__, "%3s %d %d", month, &day, &year) == 3) {
+        snprintf(text, sizeof(text), "%d %s %02d", day, month, year % 100);
+    } else {
+        snprintf(text, sizeof(text), "%s", __DATE__);
+    }
+    draw_text(text, 2, 16, 64, &lv_font_montserrat_12, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    snprintf(text, sizeof(text), "%.5s", __TIME__);
+    draw_text(text, 2, 32, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+    draw_line(2, 46, 66, 46, 1, false);
+
+    int64_t up_min = k_uptime_get() / 60000;
+    if (up_min < 60) {
+        snprintf(text, sizeof(text), "UP %um", (unsigned)up_min);
+    } else {
+        snprintf(text, sizeof(text), "UP %uh%02um", (unsigned)(up_min / 60),
+                 (unsigned)(up_min % 60));
+    }
+    draw_text(text, 2, 52, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    const char *reason = "--";
+#if IS_ENABLED(CONFIG_HWINFO)
+    uint32_t cause = 0;
+    if (hwinfo_get_reset_cause(&cause) == 0) {
+        if ((cause & RESET_PIN) != 0) {
+            reason = "PIN";
+        } else if ((cause & RESET_SOFTWARE) != 0) {
+            reason = "SOFT";
+        } else if ((cause & RESET_WATCHDOG) != 0) {
+            reason = "WDOG";
+        } else if ((cause & RESET_BROWNOUT) != 0) {
+            reason = "BROWN";
+        } else if ((cause & RESET_POR) != 0) {
+            reason = "POR";
+        } else if ((cause & RESET_CPU_LOCKUP) != 0) {
+            reason = "LOCK";
+        } else if (cause != 0) {
+            reason = "OTHER";
+        }
+    }
+#endif
+    snprintf(text, sizeof(text), "RST %s", reason);
+    draw_text(text, 2, 64, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+#ifdef BEOPYLAR_GIT_HASH
+    snprintf(text, sizeof(text), "FW %s", BEOPYLAR_GIT_HASH);
+#else
+    snprintf(text, sizeof(text), "FW ----");
+#endif
+    draw_text(text, 2, 76, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    bool peer_ok = shown.peer_age_min != PEER_AGE_NEVER && shown.peer_age_min != PEER_AGE_STALE;
+    snprintf(text, sizeof(text), "R %s",
+             peer_ok ? "ok" : (shown.peer_age_min == PEER_AGE_NEVER ? "--" : "away"));
+    draw_text(text, 2, 88, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
+
+    snprintf(text, sizeof(text), "PAGE %u/%u", (unsigned)(manual_page + 1),
+             (unsigned)PAGE_MANUAL_COUNT);
+    draw_text(text, 2, 150, 64, &lv_font_unscii_8, FG_COLOR, LV_TEXT_ALIGN_CENTER);
 }
 
 #endif /* !BEOPYLAR_PERIPHERAL */
@@ -577,6 +695,7 @@ static void render_peripheral(void) {
 static void render_central(void);
 static void render_link(void);
 static void render_power(void);
+static void render_sys(void);
 static void render_pairing(void);
 
 #if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
@@ -594,12 +713,11 @@ static int32_t battery_history_signature(void) {
 
 /* Hours left according to the drain the history actually saw. Returns -1 when
  * there is not enough evidence, so the page says nothing instead of guessing. */
-static int32_t battery_hours_left(int32_t *window_min, int32_t *drop_pct) {
+static int32_t own_hours_left(void) {
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
     int count = zmk_battery_history_get_count();
     struct zmk_battery_history_entry newest;
 
-    *window_min = 0;
-    *drop_pct = 0;
     if (count < 2 || zmk_battery_history_get_entry(count - 1, &newest) != 0) {
         return -1;
     }
@@ -628,9 +746,39 @@ static int32_t battery_hours_left(int32_t *window_min, int32_t *drop_pct) {
     }
 
     int32_t drop = (int32_t)oldest.battery_level - (int32_t)newest.battery_level;
-    *window_min = span / 60;
-    *drop_pct = drop;
     return ((int32_t)newest.battery_level * (int32_t)span) / (3600 * drop);
+#else
+    return -1;
+#endif
+}
+
+/* The other half sends even samples, one per recording interval, so its window
+ * is the sample count rather than a timestamp. */
+static int32_t peer_hours_left(void) {
+    int count = shown.peer_history_count;
+    if (shown.peer_charging || count < 3) {
+        return -1;
+    }
+    if (count > (int)BEOPYLAR_PEER_HISTORY) {
+        count = BEOPYLAR_PEER_HISTORY;
+    }
+
+    int32_t first = shown.peer_history[0];
+    int32_t last = shown.peer_history[count - 1];
+    if (last <= 0 || first <= last) {
+        return -1;
+    }
+
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+    int32_t window_min = (count - 1) * CONFIG_ZMK_BATTERY_HISTORY_INTERVAL_MINUTES;
+#else
+    int32_t window_min = (count - 1) * 10;
+#endif
+    if (window_min < 60) {
+        return -1;
+    }
+
+    return (last * window_min) / (60 * (first - last));
 }
 #endif
 #endif
@@ -659,6 +807,9 @@ static void render(void) {
         case PAGE_POWER:
             render_power();
             break;
+        case PAGE_SYS:
+            render_sys();
+            break;
         default:
             render_central();
             break;
@@ -676,6 +827,31 @@ static void render(void) {
 /* State listeners                                                           */
 /* ------------------------------------------------------------------------- */
 
+/* Leave the screen on PAGE_STATUS once the keyboard goes idle, so the pages you
+ * flipped through do not stay in front of you after you walk away. */
+struct activity_ui_state {
+    enum zmk_activity_state state;
+};
+
+static struct activity_ui_state activity_ui_get_state(const zmk_event_t *eh) {
+    const struct zmk_activity_state_changed *ev = as_zmk_activity_state_changed(eh);
+    return (struct activity_ui_state){
+        .state = (ev != NULL) ? ev->state : ZMK_ACTIVITY_ACTIVE,
+    };
+}
+
+static void activity_ui_update_cb(struct activity_ui_state state) {
+    if (state.state == ZMK_ACTIVITY_ACTIVE || manual_page == PAGE_STATUS) {
+        return;
+    }
+    manual_page = PAGE_STATUS;
+    render();
+}
+
+ZMK_DISPLAY_WIDGET_LISTENER(activity_ui, struct activity_ui_state, activity_ui_update_cb,
+                            activity_ui_get_state)
+ZMK_SUBSCRIPTION(activity_ui, zmk_activity_state_changed);
+
 /* Tell the central about this half's battery on the same relay the layer text
  * uses. The central prints that verdict verbatim, so an unknown level never
  * turns into a confident number. */
@@ -688,6 +864,18 @@ static void peer_publish(bool force) {
         .charging = shown.charging,
         .settling = shown.settling,
     };
+#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY)
+    int count = zmk_battery_history_get_count();
+    int span = (count < (int)BEOPYLAR_PEER_HISTORY) ? count : (int)BEOPYLAR_PEER_HISTORY;
+    next.history_count = (uint8_t)span;
+    for (int i = 0; i < span; i++) {
+        struct zmk_battery_history_entry entry;
+        if (zmk_battery_history_get_entry(count - span + i, &entry) != 0) {
+            break;
+        }
+        next.history[i] = entry.battery_level;
+    }
+#endif
     if (!force && memcmp(&published, &next, sizeof(next)) == 0) {
         return;
     }
@@ -934,6 +1122,8 @@ ZMK_RELAY_EVENT_HANDLE(beopylar_peer_status, PST, )
 struct peer_status_ui_state {
     uint8_t battery;
     bool charging;
+    uint8_t history_count;
+    uint8_t history[BEOPYLAR_PEER_HISTORY];
 };
 
 static struct peer_status_ui_state peer_status_ui_get_state(const zmk_event_t *eh) {
@@ -941,15 +1131,20 @@ static struct peer_status_ui_state peer_status_ui_get_state(const zmk_event_t *e
     if (ev == NULL) {
         return (struct peer_status_ui_state){0};
     }
-    return (struct peer_status_ui_state){
+    struct peer_status_ui_state state = {
         .battery = ev->battery,
         .charging = ev->charging || ev->settling,
+        .history_count = ev->history_count,
     };
+    memcpy(state.history, ev->history, sizeof(state.history));
+    return state;
 }
 
 static void peer_status_ui_update_cb(struct peer_status_ui_state state) {
     shown.peer_battery = state.battery;
     shown.peer_charging = state.charging;
+    shown.peer_history_count = state.history_count;
+    memcpy(shown.peer_history, state.history, sizeof(shown.peer_history));
     shown.peer_heard = true;
     shown.peer_ts = k_uptime_get();
     render();
@@ -1133,6 +1328,7 @@ lv_obj_t *zmk_display_status_screen(void) {
     output_ui_init();
     layer_ui_init();
     peer_status_ui_init();
+    activity_ui_init();
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
     peer_ui_init();
 #endif
