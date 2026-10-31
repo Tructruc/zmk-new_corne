@@ -1,7 +1,7 @@
 layout: {zmk_keyboard: eyelash_corne}
 layers:
   BASE:
-  - {t: NONE, type: none}
+  - TAB
   - {t: b, s: B}
   - {t: 1DK, s: '!'}
   - {t: o, s: O}
@@ -44,7 +44,7 @@ layers:
   - {t: f, s: F}
   - {t: NONE, type: none}
   - {t: ESC, h: NUM}
-  - {t: TAB, h: SFT}
+  - SFT
   - {t: ENTER, h: LGUI}
   - {t: SPC, h: CTL}
   - {t: BSPC, type: backspace}
