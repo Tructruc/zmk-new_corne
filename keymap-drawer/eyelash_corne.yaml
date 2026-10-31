@@ -44,9 +44,9 @@ layers:
   - {t: f, s: F}
   - {t: NONE, type: none}
   - {t: ESC, h: NUM}
-  - {t: TAB, h: CTL}
+  - SFT
   - {t: ENTER, h: LGUI}
-  - {t: SPC, h: SFT}
+  - {t: SPC, h: CTL}
   - {t: BSPC, type: backspace}
   - {t: ENTER, h: ALT}
   NUM:
@@ -132,7 +132,7 @@ layers:
   - PLAY
   - NEXT
   - MUTE
-  - {t: TRANS, type: trans}
+  - TAB
   - MUTE
   - {t: TRANS, type: trans}
   - F1

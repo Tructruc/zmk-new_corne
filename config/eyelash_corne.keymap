@@ -81,10 +81,10 @@
          *   the 5-way is only ENTER and the arrows, nothing else.
          *   the encoder is only volume (turn) and mute (click).
          *   right thumb 2 is a plain BSPC so holding it repeats.
-         *   TAB is the tap of left thumb 2 and CTRL its hold; SHIFT is the hold
-         *   of right thumb 1 (tap = SPACE). Two different hands, so SHIFT+TAB
-         *   and CTRL+SHIFT both work. Cost: GUI+CTRL and ALTGR+SHIFT now need
-         *   two thumb keys on the same hand, so they do not fire.
+         *   left thumb 2 is a plain SHIFT and right thumb 1 is SPACE/CTRL, as
+         *   they always were; TAB lives on FN (the free cell next to PLAY),
+         *   because SHIFT+TAB is impossible while SHIFT sits on the same thumb
+         *   that would have to tap TAB.
          *   FN + encoder turn  -> flip the status screen (status, link); while a
          *   BLE profile is open for pairing the screen shows that instead
          */
@@ -94,7 +94,7 @@
 &none     &kp Q    &kp W    &kp E    &kp R    &kp T                                 &kp UP                       &kp Y     &kp U     &kp I     &kp O     &kp P     &none
 &none     &kp A    &kp S    &kp D    &kp F    &kp G                       &kp LEFT  &kp ENTER        &kp RIGHT             &kp H     &kp J     &kp K     &kp L     &kp SEMI  &none
 &none     &kp Z    &kp X    &kp C    &kp V    &kp B               &kp C_MUTE         &kp DOWN                     &kp N     &kp M     &kp COMMA &kp DOT   &kp FSLH  &none
-                                     &lt 1 ESC     &mt LCTRL TAB  &mt LGUI ENTER                          &mt LSHFT SPACE  &kp BSPC   &mt RALT ENTER
+                                     &lt 1 ESC     &kp LSHFT      &mt LGUI ENTER                          &mt LCTRL SPACE  &kp BSPC   &mt RALT ENTER
             >;
 
             sensor-bindings = <&inc_dec_kp C_VOL_UP C_VOL_DN>;
@@ -123,7 +123,7 @@
             bindings = <
 &none     &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4                           &trans                        &bt BT_CLR  &out OUT_USB  &out OUT_BLE  &sys_reset  &bootloader  &none
 &none     &rgb_ug RGB_TOG  &rgb_ug RGB_EFF  &rgb_ug RGB_BRI  &rgb_ug RGB_BRD  &rgb_ug RGB_HUI     &trans  &trans  &trans                &rgb_ug RGB_HUD  &rgb_ug RGB_SPI  &rgb_ug RGB_SPD  &soft_off  &trans  &none
-&none     &kp C_PREV    &kp C_PP      &kp C_NEXT    &kp C_MUTE    &trans                    &kp C_MUTE     &trans                &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &none
+&none     &kp C_PREV    &kp C_PP      &kp C_NEXT    &kp C_MUTE    &kp TAB                   &kp C_MUTE     &trans                &kp F1  &kp F2  &kp F3  &kp F4  &kp F5  &none
                                      &trans  &trans  &trans                                     &trans  &trans  &trans
             >;
 
